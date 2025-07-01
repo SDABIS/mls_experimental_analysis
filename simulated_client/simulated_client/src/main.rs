@@ -51,8 +51,7 @@ fn main() {
     let settings = Config::builder()
         // Add in `./Settings.toml`
         .add_source(config::File::with_name(&config_filename))
-        // Add in settings from the environment (with a prefix of APP)
-        // Eg.. `APP_DEBUG=1 ./target/app` would set the `debug` key
+        // Add in settings from the environment
         .add_source(config::Environment::with_prefix("CGKA"))
         .build()
         .unwrap();
@@ -68,7 +67,7 @@ fn main() {
     let mut users = ClientAgent::create_user_from_ds(parameters.clone(), replicas, name.clone())
         .expect("Error creating Delivery Services and users");
     for (user_name, user) in users.drain() {
-        let client_agent = ClientAgent::new(
+        let mut client_agent = ClientAgent::new(
             user_name, parameters.clone()
         );
 

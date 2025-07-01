@@ -341,6 +341,10 @@ impl UpdatePath {
         &self.nodes
     }
 
+    pub(crate) fn number_of_ciphertexts(&self) -> usize {
+        self.nodes.iter().map(|upn| upn.encrypted_path_secrets.len()).sum()
+    }
+
     #[cfg(test)]
     /// Flip the last bytes of the ciphertexts of all contained nodes.
     pub fn flip_eps_bytes(&mut self) {

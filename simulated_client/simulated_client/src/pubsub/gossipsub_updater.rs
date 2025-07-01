@@ -6,25 +6,19 @@ use tokio::{io, select};
 use libp2p::{gossipsub, noise, rendezvous, swarm::NetworkBehaviour, swarm::SwarmEvent, tcp, yamux, Multiaddr, PeerId, Swarm, kad};
 use libp2p::kad::store::RecordStore;
 
-use crate::user::{EpochChange, User};
+use crate::user::{User};
 use std::hash::{Hash, Hasher};
-use std::str::from_utf8;
-use chrono::Utc;
 use futures::StreamExt;
 use kad::QueryResult;
 use libp2p::kad::{GetRecordOk, PeerRecord, QueryId, Record, RecordKey, StoreInserts};
 use libp2p::kad::store::MemoryStore;
 use libp2p::swarm::behaviour::toggle;
-use tls_codec::Deserialize;
 use tokio::sync::mpsc::{Receiver};
 use tokio::sync::oneshot;
 use ds_lib::ContactInfo;
-use openmls::messages::group_info::VerifiableGroupInfo;
-use crate::client_agent::{ActionRecord, CGKAAction, ClientAgent};
 use crate::pubsub::parse_message;
 use crate::user_parameters::{Directory, GossipSubConfig};
 use std::thread;
-use rumqttc::matches;
 
 #[derive(NetworkBehaviour)]
 pub struct MyBehaviour {
@@ -82,13 +76,6 @@ impl GossipSubUpdater {
         }
     }
 
-    /*pub fn identity(&self) -> Option<(String, String)> {
-        match self.multiaddr {
-            Some(ref multiaddr) => Some((self.key.public().to_peer_id().to_base58(), multiaddr.to_string())),
-            None => None
-        }
-    }*/
-
     #[tokio::main]
     pub async fn run(&mut self) {
 
@@ -122,7 +109,7 @@ impl GossipSubUpdater {
                     .allow_self_origin(true)
                     .message_id_fn(message_id_fn) // content-address messages. No two messages of the same content will be propagated.
                     .build()
-                    .map_err(|msg| io::Error::new(io::ErrorKind::Other, msg))?; // Temporary hack because `build` does not return a proper `std::error::Error`.
+                    .map_err(|msg| io::Error::new(io::ErrorKind::Other, msg))?; 
 
                 // build a gossipsub network behaviour
                 let gossipsub = gossipsub::Behaviour::new(
@@ -142,8 +129,6 @@ impl GossipSubUpdater {
                         kademlia_config.set_record_filtering(StoreInserts::FilterBoth);
                         kademlia_config.set_periodic_bootstrap_interval(Some(Duration::from_secs(30)));
                         kademlia_config.set_query_timeout(Duration::from_secs(10));
-                        //kademlia_config.set_replication_interval(Some(Duration::from_secs(10)));
-                        //kademlia_config.set_publication_interval(Some(Duration::from_secs(20)));
 
                         let kademlia = kad::Behaviour::with_config(
                             key.public().to_peer_id(),
@@ -156,8 +141,6 @@ impl GossipSubUpdater {
 
                 Ok(MyBehaviour { gossipsub, rendezvous,  kademlia })
             }).expect("Error generating behaviour")
-
-            //.with_swarm_config(|c| c.with_idle_connection_timeout(Duration::from_secs(60)))
 
             .build();
 
@@ -229,7 +212,6 @@ impl GossipSubUpdater {
                 },
 
                 _ = discover_tick.tick() => {
-                    //log::info!("{} -> Requesting Rendezvous...", self.user_name);
                     swarm.behaviour_mut().rendezvous.discover(
                             Some(rendezvous::Namespace::new(NAMESPACE.to_string()).unwrap()),
                         cookie.clone(),
@@ -246,7 +228,6 @@ impl GossipSubUpdater {
         match msg {
             GossipSubQueueMessage::Message(topic_str, message) => {
                 let topic = gossipsub::IdentTopic::new(topic_str.clone());
-                //log::info!("{} -> About to send to topic: {:?}", self.user_name, topic);
 
                 match swarm.behaviour_mut().gossipsub.publish(topic.clone(), message.clone()) {
                     Err(e) => {
@@ -281,24 +262,10 @@ impl GossipSubUpdater {
                     expires: None,
                 };
 
-                /*if key.contains("group_info") {
-                    //log::info!("{:?}", key);
-                    let group_name = from_utf8(kad_key.as_ref()).unwrap().split("/").last().unwrap().to_string();
-                    match self.write_timestamp(name, group_name, value, CGKAAction::SetRecord) {
-                        Ok(_) => {}
-                        Err(e) => { log::error!("Error writing timestamp: {:?}", e); }
-                    }
-                }*/
-
                 let _query_id = swarm.behaviour_mut().kademlia.as_mut().unwrap()
                     .put_record(record, kad::Quorum::All)
                     .expect("Failed to store record locally.");
 
-                //log::info!("{} -> New Query: {:?}", self.user_name, swarm.behaviour_mut().kademlia.store_mut().get(&kad_key).unwrap());
-
-                /*swarm.behaviour_mut().kademlia
-                    .start_providing(kad_key.clone())
-                    .expect("Failed to start providing record.");*/
             }
 
             GossipSubQueueMessage::Get(key, response, remove) => {
@@ -424,48 +391,14 @@ impl GossipSubUpdater {
         }
     }
 
-    pub fn write_timestamp(&self, user_name: String, group_name: String, serialized_group_info: Vec<u8>, action: CGKAAction) -> Result<(), String> {
-        let timestamp = Utc::now().timestamp_nanos_opt().unwrap();
-
-        if serialized_group_info.is_empty() {
-            return Ok(());
-        }
-
-        let group_info = match VerifiableGroupInfo::tls_deserialize(&mut serialized_group_info.as_slice()) {
-            Ok(gi) => gi,
-            Err(e) => {
-                return Err(format!("Error deserializing group info for Latency measure: {:?}", e));
-            }
-        };
-
-        let epoch = group_info.group_context().epoch().as_u64();
-        let epoch_change = EpochChange {
-            timestamp,
-            epoch,
-        };
-        let action_record = ActionRecord {
-            group_name,
-            epoch_change,
-            action,
-            elapsed_time: 0,
-        };
-
-        ClientAgent::write_timestamp(self.user_name.clone(), action_record);
-
-        Ok(())
-    }
+    
     fn handle_gossipsub_event(&self, event: gossipsub::Event) {
         match event {
             gossipsub::Event::Message {
                 propagation_source: _,
                 message_id: _id,
-                mut message,
+                message,
             } => {
-                /*log::info!(
-                    "{} -> Got message with id: {id} from peer: {peer_id} for topic: {}",
-                    self.user_name,
-                    message.topic.to_string()
-                );*/
                 self.deliver_to_users(message.topic.to_string(), message.data);
             }
             _ => {}
@@ -498,7 +431,7 @@ impl GossipSubUpdater {
                                         }
                                     }
                                 } else {
-                                    //Eliminar antiguo GroupInfo
+                                    //Remove old GroupInfo
                                     let kad_key = kad::RecordKey::new(&key);
                                     let record = kad::Record {
                                         key: kad_key.clone(),
@@ -545,8 +478,7 @@ impl GossipSubUpdater {
                                 }
                             }
                         }
-                        //_ => {}
-                        a => {log::info!("MAYBE: {:?}",a);}
+                        _ => {}
                     }
                 }
             }
@@ -554,19 +486,7 @@ impl GossipSubUpdater {
             kad::Event::InboundRequest { request } => {
                 if let kad::InboundRequest::PutRecord { record: Some(record), .. } = request.clone() {
                     swarm.behaviour_mut().kademlia.as_mut().unwrap().store_mut().put(record.clone()).unwrap();
-                    let Record { key, value: _value, .. } = record;
-                    /*if from_utf8(key.as_ref()).unwrap().contains("group_info") {
-                        //log::info!("{}: Received put record: {:?}", self.user_name, key);
-
-
-                        //let group_name = from_utf8(key.as_ref()).unwrap().split("/").last().unwrap().to_string();
-                        match self.write_timestamp(group_name, value, CGKAAction::RecvRecord) {
-                            Ok(_) => {}
-                            Err(e) => {log::error!("Error writing timestamp: {:?}", e);}
-                        }
-                    }*/
                 }
-                //log::info!("INBOUND: {:?}", request);
             }
             _other => {}
         }
@@ -574,11 +494,10 @@ impl GossipSubUpdater {
 
     fn deliver_to_users(&self, topic: String, message: Vec<u8>) {
         for (username, subscriptions) in &self.subscriptions {
-            //log::info!("{} -> Receive message for topic {}. Subscribed to {:?}", username, topic, subscriptions);
             if subscriptions.contains(&topic) {
                 let user = self.users.get(username).unwrap();
 
-                let mut user_thread = Arc::clone(user);
+                let user_thread = Arc::clone(user);
                 let topic_thread = topic.to_string().clone();
                 let username_thread = username.clone();
                 let mut message_thread = message.clone();

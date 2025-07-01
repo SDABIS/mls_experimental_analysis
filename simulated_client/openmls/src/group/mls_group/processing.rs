@@ -137,6 +137,39 @@ impl MlsGroup {
         ))
     }
 
+    pub fn commit_to_pending_proposals_with_path<Provider: OpenMlsProvider>(
+        &mut self,
+        provider: &Provider,
+        signer: &impl Signer,
+    ) -> Result<
+        (MlsMessageOut, Option<MlsMessageOut>, Option<GroupInfo>, PathComputationResult),
+        CommitToPendingProposalsError<Provider::StorageError>,
+    > {
+        self.is_operational()?;
+
+        // Build and stage the commit using the commit builder
+        // TODO #751
+        let (builder, path) = self
+            .commit_builder()
+            // This forces committing to the proposals in the proposal store:
+            .consume_proposal_store(true)
+            .force_self_update(true)
+            .load_psks(provider.storage())?
+            .build_with_path(provider.rand(), provider.crypto(), signer, |_| true)?;
+
+        let (commit, welcome, group_info) = builder
+            .stage_commit(provider)?
+            .into_contents();
+
+        Ok((
+            commit,
+            // Turn the [`Welcome`] to an [`MlsMessageOut`], if there is one
+            welcome.map(|welcome| MlsMessageOut::from_welcome(welcome, self.version())),
+            group_info,
+            path
+        ))
+    }
+
     /// Merge a [StagedCommit] into the group after inspection. As this advances
     /// the epoch of the group, it also clears any pending commits.
     pub fn merge_staged_commit<Provider: OpenMlsProvider>(

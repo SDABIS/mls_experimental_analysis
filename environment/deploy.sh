@@ -29,7 +29,7 @@ while getopts "c:sh" opt; do
 done
 
 if $start_c; then
-    docker network create mls_network --driver overlay --scope swarm
+    docker network create mls_network --driver overlay --subnet 10.0.0.0/16 --ip-range 10.0.0.0/16 --scope swarm
     echo "Starting ${client_replicas} clients"
     REPLICAS=${client_replicas} docker stack deploy -c client/docker-compose.yml mls
 fi

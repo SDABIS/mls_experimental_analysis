@@ -24,8 +24,8 @@ use super::PublicGroupDiff;
 
 /// A helper struct which contains the values resulting from the preparation of
 /// a commit with path.
-#[derive(Default)]
-pub(crate) struct PathComputationResult {
+#[derive(Default, Clone)]
+pub struct PathComputationResult {
     pub(crate) commit_secret: Option<CommitSecret>,
     pub(crate) encrypted_path: Option<UpdatePath>,
     pub(crate) plain_path: Option<Vec<PlainUpdatePathNode>>,
@@ -138,5 +138,16 @@ impl PublicGroupDiff<'_> {
             plain_path: Some(plain_path),
             new_keypairs,
         })
+    }
+
+}
+impl PathComputationResult {
+    pub fn number_of_ciphertexts (&self) -> Result<usize, LibraryError> {
+        match &self.encrypted_path {
+            None => Err(LibraryError::custom("No encrypted path found")),
+            Some(path) => {
+                Ok(path.number_of_ciphertexts())
+            }
+        }
     }
 }

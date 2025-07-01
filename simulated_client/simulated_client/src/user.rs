@@ -1,6 +1,4 @@
 use std::borrow::Borrow;
-use std::thread;
-use std::time::Duration;
 use std::collections::HashSet;
 use std::{cell::RefCell, collections::HashMap, str};
 use std::cmp::PartialEq;
@@ -162,7 +160,6 @@ impl User {
 
     /// Get the key packages fo this user.
     pub fn key_packages(&self) -> Vec<(Vec<u8>, KeyPackage)> {
-        // clone first !
         let kpgs = self.identity.borrow().kp.clone();
         Vec::from_iter(kpgs)
     }
@@ -179,7 +176,6 @@ impl User {
                 Ok(result)
             }
         }
-        //self.backend.group_exists(group_name)
     }
 
     pub fn get_group_info(&self, group_name: String) -> Result<VerifiableGroupInfo, String> {
@@ -194,8 +190,6 @@ impl User {
                 Ok(result)
             }
         }
-
-        //self.backend.group_info(self.username.clone(), group_name)
     }
 
     pub fn consume_key_package(&self, contact: &Contact) -> Result<KeyPackageIn, String> {
@@ -212,23 +206,7 @@ impl User {
             }
         }
 
-        //self.backend.consume_key_package(&contact.id)
-
     }
-
-    /*pub fn register(&self, group_name: String) {
-
-            DSType::Request  => {
-                match self.backend.register_client(self) {
-                    Ok(r) => log::debug!("Created new user: {:?}", r),
-                    Err(e) => log::error!("Error creating user: {:?}", e),
-                }
-            },
-            DSType::PubSub(_) => {
-                self.broker.unwrap().subscribe(group_name.clone());
-            }
-        }
-    }*/
 
     pub fn register(&self) -> Result<(), String> {
 
@@ -338,7 +316,6 @@ impl User {
                         let id = credential.identity().to_vec();
                         id
                     }
-                    //None => panic!("There's a member in the group we don't know: {:?}/{:?}", credential.identity().to_vec(), credential.credential_type()),
                 };
                 recipients.push(contact);
             }
@@ -383,9 +360,9 @@ impl User {
             None => return 1,
         };
 
-        let recipients = self.recipients(group);
+        let count = group.mls_group.borrow().members().count();
 
-        recipients.len()
+        count
     }
 
     pub fn not_members_of_group(&self, group_name: String) -> Vec<String> {
@@ -459,19 +436,6 @@ impl User {
             }
         }
 
-        /*let ckp = ClientKeyPackages(
-            vec![kp]
-                .into_iter()
-                .map(|(b, kp)| (b.into(), KeyPackageIn::from(kp)))
-                .collect::<Vec<(TlsByteVecU8, KeyPackageIn)>>()
-                .into(),
-        );
-
-        match self.backend.publish_key_packages(self, &ckp) {
-            Ok(()) => Ok(()),
-            Err(e) => Err(format!("Error sending new key package: {e:?}"))
-        }*/
-
     }
 
     /// Send an application message to the group.
@@ -500,9 +464,6 @@ impl User {
         self.send_to_ds(group_name.clone(), message_out, &recipients)?;
         
         log::debug!(" >>> send: {:?}", msg);
-
-        // XXX: Need to update the client's local view of the conversation to include
-        // the message they sent.
 
         Ok(())
     }
@@ -587,7 +548,6 @@ impl User {
                     self.username,
                     message.group_id()
                 );
-                //return Err("error".to_string());
                 return Ok((None, PostUpdateActions::None, None));
             }
         };
@@ -600,7 +560,6 @@ impl User {
         let mut epoch_change = EpochChange {timestamp, epoch: message_epoch};
 
         if group_epoch < message_epoch {
-            //log::info!("{} -> DESYNC: Group: {} \\\\ Message: {}", self.username, group_epoch, message_epoch);
 
             // User has become desync-ed
             let message_type = message.content_type();
@@ -624,6 +583,7 @@ impl User {
                         action: CGKAAction::Process(sender),
                         epoch_change,
                         elapsed_time: 0,
+                        num_users: 0,
                     };
                     return Ok((Some(action_record), PostUpdateActions::None, None));
                 }
@@ -636,14 +596,12 @@ impl User {
 
         }
 
-        // Empezar a medir
         let now = ProcessTime::now();
 
-                    // Process the message and release the borrow on mls_group as soon as possible
         {
             let mut mls_group = group.mls_group.borrow_mut();
             processed_message = match mls_group.process_message(&self.crypto, message.clone()) {
-                Ok(msg) => msg,
+                Ok(msg) => {msg},
                 Err(e) => {
                     // Conflict
                     if ProcessMessageError::ValidationError(ValidationError::WrongEpoch) == e
@@ -669,7 +627,7 @@ impl User {
                     }
                 }
             };
-        } // mls_group borrow ends here
+        }
 
         let processed_message_credential: Credential = processed_message.credential().clone();
 
@@ -684,16 +642,12 @@ impl User {
                 );
                 log::info!("{} RECEIVED APPLICATION MESSAGE by {}", self.username, conversation_message.author);
 
-                /*if group_name.is_none() || group_name.clone().unwrap() == group.group_name {
-                    messages_out.push(conversation_message.clone());
-                }*/
                 group.conversation.add(conversation_message);
 
                 None
             }
             ProcessedMessageContent::ProposalMessage(proposal_ptr) => {
                 log::info!("{} PROCESSED PROPOSAL from {} IN {}.", self.username, sender_name, group.group_name);
-                //log::info!("{:?}", *proposal_ptr);
 
                 group.mls_group.borrow_mut().store_pending_proposal(
                     self.crypto().storage(),
@@ -721,14 +675,10 @@ impl User {
                             match c.action {
                                 CGKAAction::Propose(_) => {},
                                 _ => {
-                                    self.undo_commit(&mls_group)?;
+                                    self.undo_commit(&mls_group, c.clone())?;
                                 }
                             }
                         }
-
-                        /*if let DSType::GossipSub = self.ds_type {
-                            self._publish_group_info(&mls_group, None)?;
-                        }*/
 
                         if remove_proposal {
                             log::debug!("update::Processing StagedCommitMessage removing {} from group {} ", self.username, group.group_name);
@@ -742,7 +692,8 @@ impl User {
                                         epoch: group_epoch + 1, timestamp
                                     },
                                     action: CGKAAction::Process(sender.clone()),
-                                    elapsed_time: elapsed
+                                    elapsed_time: elapsed,
+                                    num_users: mls_group.members().count(),
                                 } ),
                                 PostUpdateActions::Remove,
                                 Some(mls_group.group_id().clone()),
@@ -753,10 +704,9 @@ impl User {
                     Err(e) => return Err(e.to_string()),
                 };
 
-                let group_recipients = self.mls_recipients(mls_group.borrow());
-                let members = group_recipients.iter().map(|a| from_utf8(a).unwrap()).collect::<Vec<&str>>();
+                let members = mls_group.members().count();
                 log::info!("{} PROCESSED COMMIT from {} IN {}. Epoch: {}. Members: {})", self.username, sender_name, group.group_name,
-                    mls_group.epoch().as_u64(), members.len());
+                    mls_group.epoch().as_u64(), members);
 
                 Some(result)
             }
@@ -769,7 +719,8 @@ impl User {
                 group_name: group_name.to_string(),
                 action: action_record,
                 epoch_change,
-                elapsed_time: elapsed
+                elapsed_time: elapsed,
+                num_users: group.mls_group.borrow().members().count(),
             }),
             None => None
         };
@@ -789,13 +740,11 @@ impl User {
 
         match message.clone().extract() {
             MlsMessageBodyIn::Welcome(welcome) => {
-                // Join the group. (Later we should ask the user to
-                // approve first ...)
+
                 let (group_name, epoch_change, elapsed_time) = self.join_group(welcome)?;
                 self.active.insert(group_name.clone(), (true, 0));
 
                 self.subscribe(group_name.clone())?;
-                //self.create_kp()?;
 
                 let welcome_size = message.tls_serialized_len();
 
@@ -804,6 +753,7 @@ impl User {
                     epoch_change,
                     action: CGKAAction::Welcome(sender.clone(), welcome_size),
                     elapsed_time,
+                    num_users: self.groups.borrow().get(&group_name).unwrap().mls_group.borrow().members().count(),
                 };
                 Ok(Some(action_record))
             }
@@ -855,7 +805,6 @@ impl User {
                         Err(e)
                     }
                 }
-//                    process_protocol_message(message.into()).expect("Error processing message");
             }
             _ => panic!("Unsupported message type"),
         }
@@ -884,41 +833,6 @@ impl User {
         Ok(messages_out)
     }
 
-    /*pub fn leave_group(&mut self, group_name: String) -> Result<(), String> {
-        // Get the group ID
-
-        let mut groups = self.groups.borrow_mut();
-        let group = match groups.get_mut(&group_name) {
-            Some(g) => g,
-            None => return Err(format!("No group with name {group_name} known.")),
-        };
-
-        // Remove operation on the mls group
-        let (remove_message, group_info) = group
-            .mls_group
-            .borrow_mut()
-            .leave_group(&self.backend, &self.identity.borrow().signer)
-            .map_err(|e| format!("Failed to remove member from group - {e}"))?;
-
-        // First, send the MlsMessage remove commit to the group.
-        log::trace!("Sending commit");
-        let group = groups.get_mut(&group_name).unwrap(); // XXX: not cool.
-        let group_recipients = self.recipients(group);
-
-        let msg = GroupMessage::new(remove_message.into(), &group_recipients);
-        self.backend.send_msg(&msg)?;
-
-        // Second, process the removal on our end.
-        group
-            .mls_group
-            .borrow_mut()
-            .merge_pending_commit(&self.crypto)
-            .expect("error merging pending commit");
-
-        drop(groups);
-
-        Ok(())
-    }*/
     /// Create a group with the given name.
     pub fn create_group(&mut self, group_name: String) -> Result<(), String> {
         self.subscribe(group_name.clone())?;
@@ -927,8 +841,6 @@ impl User {
         let mut group_aad = group_id.to_vec();
         group_aad.extend(b" AAD");
 
-        // NOTE: Since the DS currently doesn't distribute copies of the group's ratchet
-        // tree, we need to include the ratchet_tree_extension.
         let group_config = MlsGroupCreateConfig::builder()
             .use_ratchet_tree_extension(true)
             .build();
@@ -943,7 +855,7 @@ impl User {
         )
         .expect("Failed to create MlsGroup");
         let elapsed = now.elapsed().as_micros();
-        //println!("{:?}", now.elapsed());
+
         mls_group.set_aad(group_aad);
 
         let timestamp = Utc::now().timestamp_nanos_opt().unwrap();
@@ -969,7 +881,8 @@ impl User {
             },
             group_name: group_name.clone(),
             action: CGKAAction::Create,
-            elapsed_time: elapsed
+            elapsed_time: elapsed,
+            num_users: 1,
         });
 
         Ok(())
@@ -977,18 +890,20 @@ impl User {
 
     /// Invite user with the given name to the group.
     pub fn invite(&mut self, name: String, group_name: String) -> Result<EpochChange, String> {
+
         // First we need to get the key package for {id} from the DS.
         let contact = match self.contacts.values().find(|c| c.username == name) {
             Some(v) => v,
             None => return Err(format!("No contact with name {name} known.")),
         };
 
+
         // Reclaim a key package from the server
         let joiner_key_package = self.consume_key_package(&contact)?;
 
         let now = ProcessTime::now();
         // Build a proposal with this key package and do the MLS bits.
-        let (out_messages, welcome, new_group_info) = {
+        let (out_messages, welcome, new_group_info, path) = {
             let mut groups = self.groups.borrow_mut();
             let group = match groups.get_mut(&group_name) {
                 Some(g) => g,
@@ -998,7 +913,7 @@ impl User {
             let result = group
                 .mls_group
                 .borrow_mut()
-                .add_members(
+                .add_members_with_path(
                     &self.crypto,
                     &self.identity.borrow().signer,
                     &[joiner_key_package.into()],
@@ -1015,6 +930,9 @@ impl User {
         };
 
 
+        let number_of_ciphertexts = path.number_of_ciphertexts()
+            .map_err(|e| format!("Error calculating number of ciphertexts: {:?}", e))?;
+
         let size = out_messages.tls_serialized_len();
         // Second, process the invitation on our end.
         let epoch_change = self.post_process_commit(
@@ -1022,7 +940,7 @@ impl User {
             out_messages,
             new_group_info,
             Some(stored_welcome),
-            CGKAAction::Invite(name.clone(), size),
+            CGKAAction::Invite(name.clone(), size, number_of_ciphertexts),
             elapsed
         )?;
 
@@ -1043,7 +961,7 @@ impl User {
                     let leaf_node_parameters = LeafNodeParameters::default();
                     Propose::Update(leaf_node_parameters)
                 }
-                CGKAAction::Invite(user, _) => {
+                CGKAAction::Invite(user, _, _) => {
                     for prop in group.mls_group.borrow_mut().pending_proposals() {
                         match prop.proposal() {
                             Proposal::Add(p) => {
@@ -1062,7 +980,7 @@ impl User {
 
                     // Reclaim a key package from the server
                     let joiner_key_package = self.consume_key_package(&contact)?;
-                    //mls_group.propose_add_member(&self.crypto, &self.identity.borrow().signer, &joiner_key_package.into())
+                    
                     Propose::Add(joiner_key_package.into())
                 }
                 CGKAAction::Remove(user, _) => {
@@ -1095,7 +1013,7 @@ impl User {
 
         let action = match action {
             CGKAAction::Update(_) => CGKAAction::Update(size),
-            CGKAAction::Invite(user, _) => CGKAAction::Invite(user, size),
+            CGKAAction::Invite(user, _, _) => CGKAAction::Invite(user, size, 0),
             CGKAAction::Remove(user, _) => CGKAAction::Remove(user, size),
             _ => {unreachable!()}
         };
@@ -1151,7 +1069,7 @@ impl User {
 
     pub fn commit_to_proposals(&mut self, group_name: String, amount: usize) -> Result<EpochChange, String> {
 
-        let ((out_message, welcome, new_group_info), new_users, elapsed) = {
+        let ((out_message, welcome, new_group_info, path), new_users, elapsed) = {
             let invalid_proposals = self.invalid_proposals(group_name.clone())?;
 
             let groups = self.groups.borrow();
@@ -1187,7 +1105,6 @@ impl User {
             let new_users = group.mls_group.borrow_mut().pending_proposals()
                 .filter_map(|p| {
                     if let Proposal::Add(add) = p.proposal() {
-                        // Intentar convertir la identidad a UTF-8 y devolverla como String
                         from_utf8(add.key_package().leaf_node().credential().identity())
                             .ok()
                             .map(|identity| identity.to_string())
@@ -1201,7 +1118,7 @@ impl User {
             let result = group
                 .mls_group
                 .borrow_mut()
-                .commit_to_pending_proposals(
+                .commit_to_pending_proposals_with_path(
                     &self.crypto,
                     &self.identity.borrow().signer,
                 )
@@ -1220,13 +1137,16 @@ impl User {
         };
 
         let size = out_message.tls_serialized_len();
+        let number_of_ciphertexts = path.number_of_ciphertexts()
+            .map_err(|e| format!("Error calculating number of ciphertexts: {:?}", e))?;
+
 
         let epoch_change = self.post_process_commit(
             group_name.clone(),
             out_message,
             new_group_info,
             stored_welcome,
-            CGKAAction::Commit(amount, size),
+            CGKAAction::Commit(amount, size, number_of_ciphertexts),
             elapsed
         )?;
         Ok(epoch_change)
@@ -1354,22 +1274,18 @@ impl User {
         log::info!("{} -> Joining group {}", self.username, group_name);
         self.subscribe(group_name.clone()).unwrap();
 
-        //self.update_clients();
         // First we need to get the group info for {id} from the DS.
         let group_id = group_name.as_bytes();
         let mut group_aad = group_id.to_vec();
         group_aad.extend(b" AAD");
         let gi_size = group_info.tls_serialized_len();
 
-
-        // Build a proposal with this key package and do the MLS bits.
-        //let mut groups = self.groups.borrow_mut();
         let group_config = MlsGroupJoinConfig::builder()
             .use_ratchet_tree_extension(true)
             .build();
 
         let now = ProcessTime::now();
-        let (new_mls_group, out_messages, new_group_info) = MlsGroup::join_by_external_commit(
+        let (new_mls_group, out_messages, new_group_info, path) = MlsGroup::join_by_external_commit_with_path(
             &self.crypto,
             &self.identity.borrow().signer,
             None,
@@ -1392,13 +1308,11 @@ impl User {
 
         {
             let mut groups = self.groups.borrow_mut();
-            /*match groups.insert(group_name.clone(), new_group) {
-                Some(old) => Err(format!("Overrode the group {:?}", old.group_name)),
-                None => Ok(()),
-            }?;*/
             groups.insert(group_name.clone(), new_group);
         }
 
+        let number_of_ciphertexts = path.number_of_ciphertexts()
+            .map_err(|e| format!("Error calculating number of ciphertexts: {:?}", e))?;
         let commit_size = out_messages.tls_serialized_len();
 
         let epoch_change = self.post_process_commit(
@@ -1406,7 +1320,7 @@ impl User {
             out_messages,
             new_group_info,
             None,
-            CGKAAction::Join(commit_size, gi_size),
+            CGKAAction::Join(commit_size, gi_size, number_of_ciphertexts),
             elapsed
         )?;
 
@@ -1431,12 +1345,11 @@ impl User {
         if !matches!(action, CGKAAction::Propose(..)) {
             // Sleep 1 sec to give time to new users to subscribe
             if !matches!(self.ds, DeliveryService::GossipSub(..)) {
-                thread::sleep(Duration::from_secs(1));
+                //thread::sleep(Duration::from_secs(1));
             }
         }
 
         let timestamp = Utc::now().timestamp_nanos_opt().unwrap();
-        //Correcting the fact that commit is pending
         let epoch = mls_group.epoch().as_u64();
 
         let action_record = ActionRecord {
@@ -1446,7 +1359,8 @@ impl User {
                 timestamp,
                 epoch
             },
-            elapsed_time
+            elapsed_time,
+            num_users: mls_group.members().count(),
         };
 
         log::trace!("Sending commit");
@@ -1457,10 +1371,6 @@ impl User {
 
         self.send_to_ds(group_name.clone(), msg_out, &group_recipients)?;
         self.pending_commits.insert(group_name.clone(), (group_info.clone(), welcome, action_record));
-
-        /*if let DeliveryService::Request = self.ds {
-            self.confirm_commit(group_name.clone())?;
-        }*/
 
         Ok(EpochChange {
             timestamp,
@@ -1513,14 +1423,6 @@ impl User {
 
         log::trace!("   {}", group_name);
 
-        /*match self.groups.borrow_mut().insert(group_name.clone(), group) {
-            Some(old) => Err(format!("Overrode the group {:?}", old.group_name)),
-            None => Ok((group_name, EpochChange {
-                timestamp,
-                epoch
-            })),
-        }*/
-
         self.groups.borrow_mut().insert(group_name.clone(), group);
 
         Ok((
@@ -1559,10 +1461,6 @@ impl User {
     pub fn backend(&self) -> &Backend {
         &self.backend
     }
-
-    /*pub fn add_broker(&mut self, broker: Arc<Mutex<Broker>>) {
-        self.broker = Some(broker);
-    }*/
 
     pub fn group_list(&self) -> Vec<String> {
         self.groups.borrow().keys().cloned().collect()
@@ -1603,7 +1501,6 @@ impl User {
             }
         }
 
-        //log::info!("{} -> Confirming commit", self.username);
         let edited_record = match action_record.clone().action {
             CGKAAction::Propose(_) => {action_record},
             _ => {
@@ -1627,12 +1524,13 @@ impl User {
                 let mls_group = group.mls_group.borrow();
                 self._publish_group_info(&mls_group, group_info.into())?;
 
-                // "Epoch" was calculated while the commit was pending
+                // "Epoch" and "num_users" were calculated while the commit was pending
                 ActionRecord {
                     epoch_change: EpochChange {
                         epoch: action_record.epoch_change.epoch + 1,
                         ..action_record.epoch_change.clone()
                     },
+                    num_users: mls_group.members().count(),
                     ..action_record
                 }
             }
@@ -1644,8 +1542,26 @@ impl User {
 
     }
 
-    fn undo_commit(&self, mls_group: &MlsGroup) -> Result<(), String> {
+    fn undo_commit(&self, mls_group: &MlsGroup, action_record: ActionRecord) -> Result<(), String> {
         log::info!("{} -> undoing commit", self.username);
+
+        match action_record.action {
+
+            CGKAAction::Commit(..) | CGKAAction::Join(..) | CGKAAction::Invite(..) | CGKAAction::Remove(..) | CGKAAction::Update(..) => {
+                let attempted_action = ActionRecord {
+                    epoch_change: EpochChange {
+                        epoch: action_record.epoch_change.epoch + 1,
+                        ..action_record.epoch_change.clone()
+                    },
+                    action: CGKAAction::CommitAttempt(Box::new(action_record.action.clone())),
+                    ..action_record
+                };
+                ClientAgent::write_timestamp(self.username.clone(), attempted_action);
+            },
+            // Only commits can be undone - should not be possible to reach this function with other actions
+            _ => {unreachable!()}
+        };
+
         self._publish_group_info(mls_group, None)
 
     }

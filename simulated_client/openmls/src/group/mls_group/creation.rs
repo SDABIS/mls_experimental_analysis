@@ -98,6 +98,57 @@ impl MlsGroup {
         credential_with_key: CredentialWithKey,
     ) -> Result<(Self, MlsMessageOut, Option<GroupInfo>), ExternalCommitError<Provider::StorageError>>
     {
+        MlsGroup::join_by_external_commit_internal(
+            provider,
+            signer,
+            ratchet_tree,
+            verifiable_group_info,
+            mls_group_config,
+            capabilities,
+            extensions,
+            aad,
+            credential_with_key,
+        )
+        .map(|(mls_group, mls_message, group_info, _)| (mls_group, mls_message, group_info))
+    }
+
+    pub fn join_by_external_commit_with_path<Provider: OpenMlsProvider>(
+        provider: &Provider,
+        signer: &impl Signer,
+        ratchet_tree: Option<RatchetTreeIn>,
+        verifiable_group_info: VerifiableGroupInfo,
+        mls_group_config: &MlsGroupJoinConfig,
+        capabilities: Option<Capabilities>,
+        extensions: Option<Extensions>,
+        aad: &[u8],
+        credential_with_key: CredentialWithKey,
+    ) -> Result<(Self, MlsMessageOut, Option<GroupInfo>, PathComputationResult), ExternalCommitError<Provider::StorageError>> 
+    {
+        MlsGroup::join_by_external_commit_internal(
+            provider,
+            signer,
+            ratchet_tree,
+            verifiable_group_info,
+            mls_group_config,
+            capabilities,
+            extensions,
+            aad,
+            credential_with_key,
+        )
+    }
+
+    fn join_by_external_commit_internal<Provider: OpenMlsProvider>(
+        provider: &Provider,
+        signer: &impl Signer,
+        ratchet_tree: Option<RatchetTreeIn>,
+        verifiable_group_info: VerifiableGroupInfo,
+        mls_group_config: &MlsGroupJoinConfig,
+        capabilities: Option<Capabilities>,
+        extensions: Option<Extensions>,
+        aad: &[u8],
+        credential_with_key: CredentialWithKey,
+    ) -> Result<(Self, MlsMessageOut, Option<GroupInfo>, PathComputationResult), ExternalCommitError<Provider::StorageError>>
+    {
         // Prepare the commit parameters
         let framing_parameters = FramingParameters::new(aad, WireFormat::PublicMessage);
 
@@ -202,8 +253,8 @@ impl MlsGroup {
         mls_group.set_max_past_epochs(mls_group_config.max_past_epochs);
 
         // Immediately create the commit to add ourselves to the group.
-        let create_commit_result = mls_group
-            .create_external_commit(params, provider, signer)
+        let (create_commit_result, path_computation_result) = mls_group
+            .create_external_commit_with_path(params, provider, signer)
             .map_err(|_| ExternalCommitError::CommitError)?;
 
         mls_group.group_state = MlsGroupState::PendingCommit(Box::new(
@@ -220,6 +271,7 @@ impl MlsGroup {
             mls_group,
             public_message.into(),
             create_commit_result.group_info,
+            path_computation_result
         ))
     }
 }

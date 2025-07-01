@@ -17,28 +17,8 @@ pub fn parse_message(message: &mut Vec<u8>, topic: String, user_name: String, us
         .map(|r| from_utf8(r.as_slice()).unwrap().to_string()).collect::<Vec<String>>();
 
     if !recipients.contains(&user_name) && topic.starts_with("cgka/welcome") {
-        //log::info!("{} -> RECIPIENTS {:?}", user_name, recipients);
         return Ok(());
     }
-    /*let user = {
-        if topic.starts_with("cgka/welcome/") {
-            active_users.get_mut("").unwrap()
-        }
-        else {
-            // Obtain the group name from the topic (cgka/group/{group_name})
-            // Obtain the group
-            let user = match active_users.get_mut(&group_name) {
-                Some(u) => u,
-                None => {
-                    //log::info!{"{} -> Received message from topic {}", self.user_name, topic};
-                    active_users.get_mut("").unwrap()
-                }
-            };
-
-            //log::info!("{} ==? {}", sender, user_name);
-            user
-        }
-    };*/
 
     match user.process_in_message(message.msg, sender.clone()) {
         Ok(action_record) => {

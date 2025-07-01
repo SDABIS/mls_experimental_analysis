@@ -58,7 +58,7 @@ impl Broker for MqttBroker {
     fn send_welcome(&self, welcome_msg: &GroupMessage, user_name: String) -> Result<(), String> {
         let serialized_msg = welcome_msg.tls_serialize_detached().unwrap();
 
-        log::info!("Sending Welcome to {}", user_name);
+        //log::info!("Sending Welcome to {}", user_name);
         let topic = format!("cgka/welcome/{user_name}");
 
         let client = self.async_client.clone();

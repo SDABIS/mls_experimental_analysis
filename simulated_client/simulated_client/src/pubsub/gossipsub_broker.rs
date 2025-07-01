@@ -64,7 +64,6 @@ impl Broker for GossipSubBroker {
     fn send_welcome(&self, welcome_msg: &GroupMessage, user_name: String) -> Result<(), String> {
         let serialized_msg = welcome_msg.tls_serialize_detached().unwrap();
 
-        //log::info!("Sending Welcome to {}", username);
         let topic = format!("cgka/welcome/{user_name}");
 
         let tx = self.tx.clone();
@@ -81,7 +80,6 @@ impl Broker for GossipSubBroker {
     async fn send_msg(&self, group_msg: &GroupMessage, group_name: String) -> Result<(), String> {
 
         let serialized_msg = group_msg.tls_serialize_detached().unwrap();
-        //log::info!("Sending {} bytes", serialized_msg.len());
         let topic = format!("cgka/group/{group_name}");
 
         self.tx.send(GossipSubQueueMessage::Message(topic, serialized_msg))

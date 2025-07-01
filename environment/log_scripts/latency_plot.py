@@ -33,10 +33,9 @@ plt.plot(data[x_label], data['max_latency'], label='Max Latency', color='red', m
 plt.ticklabel_format(style='plain', axis='y')
 plt.xlabel('Users')
 plt.ylabel('Latency (Microseconds)')
-#plt.title('Mean and Max Latency')
 plt.legend()
 plt.grid(True)
 plt.tight_layout()
-plt.savefig("latency_plot.pdf")
+plt.savefig("figures/" + "latency_plot.pdf")
 
 plt.show()

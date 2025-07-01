@@ -79,11 +79,13 @@ pub struct UserParameters {
     pub(crate) sleep_millis_min: i64,
     pub(crate) sleep_millis_max: i64,
     pub(crate) groups: Vec<String>,
+    pub(crate) max_members: usize,
     pub(crate) auth_policy: AuthorizationPolicy,
 
     pub(crate) invite_chance: f64,
     pub(crate) remove_chance: f64,
     pub(crate) update_chance: f64,
+
 
     pub(crate) paradigm: Paradigm,
     pub(crate) proposals_per_commit: usize,
@@ -144,6 +146,9 @@ impl UserParameters {
         let groups = settings.get_array("cgka.groups")
             .map(|groups| groups.iter().map(|g| g.to_string()).collect())
             .unwrap_or(default.groups);
+        let max_members = settings.get_int("cgka.max_members")
+            .map(|max| max as usize)
+            .unwrap_or(default.max_members);
 
         let auth_policy = settings.get_string("cgka.auth_policy")
             .map(|policy| AuthorizationPolicy::from(policy))
@@ -175,6 +180,7 @@ impl UserParameters {
             sleep_millis_min,
             sleep_millis_max,
             groups,
+            max_members,
             auth_policy,
             scale,
 
@@ -215,6 +221,7 @@ impl Default for UserParameters {
             sleep_millis_min: 10000,
             sleep_millis_max: 30000,
             groups: vec!["group_AAA".to_string()],
+            max_members: 1000,
             auth_policy: AuthorizationPolicy::Random,
             invite_chance: 0.6,
             remove_chance: 0.1,

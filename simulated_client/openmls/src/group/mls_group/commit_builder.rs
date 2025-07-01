@@ -272,6 +272,26 @@ impl<'a> CommitBuilder<'a, LoadedPsks> {
         signer: &impl Signer,
         f: impl FnMut(&QueuedProposal) -> bool,
     ) -> Result<CommitBuilder<'a, Complete>, CreateCommitError> {
+        self.build_internal(rand, crypto, signer, f).map(|(builder, _)| {builder})
+    }
+
+    pub fn build_with_path(
+        self,
+        rand: &impl OpenMlsRand,
+        crypto: &impl OpenMlsCrypto,
+        signer: &impl Signer,
+        f: impl FnMut(&QueuedProposal) -> bool,
+    ) -> Result<(CommitBuilder<'a, Complete>, PathComputationResult), CreateCommitError> {
+        self.build_internal(rand, crypto, signer, f)
+    }
+
+    pub fn build_internal(
+        self,
+        rand: &impl OpenMlsRand,
+        crypto: &impl OpenMlsCrypto,
+        signer: &impl Signer,
+        f: impl FnMut(&QueuedProposal) -> bool,
+    ) -> Result<(CommitBuilder<'a, Complete>, PathComputationResult), CreateCommitError> {
         let ciphersuite = self.group.ciphersuite();
         let sender = Sender::build_member(self.group.own_leaf_index());
         let (cur_stage, builder) = self.take_stage();
@@ -407,6 +427,7 @@ impl<'a> CommitBuilder<'a, LoadedPsks> {
                 PathComputationResult::default()
             };
 
+        let path_result = path_computation_result.clone();
         let update_path_leaf_node = path_computation_result
             .encrypted_path
             .as_ref()
@@ -586,14 +607,14 @@ impl<'a> CommitBuilder<'a, LoadedPsks> {
 
         let use_ratchet_tree_extension = builder.group.configuration().use_ratchet_tree_extension;
 
-        Ok(builder.into_stage(Complete {
+        Ok((builder.into_stage(Complete {
             result: CreateCommitResult {
                 commit: authenticated_content,
                 welcome_option,
                 staged_commit,
                 group_info: group_info.filter(|_| use_ratchet_tree_extension),
             },
-        }))
+        }), path_result))
     }
 }
 

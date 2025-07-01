@@ -77,12 +77,39 @@ impl CreateCommitParams<'_> {
 }
 
 impl MlsGroup {
+    pub(crate) fn create_external_commit_with_path<Provider: OpenMlsProvider>(
+        &mut self,
+        params: CreateCommitParams,
+        provider: &Provider,
+        signer: &impl Signer,
+    ) -> Result<(CreateCommitResult, PathComputationResult), CreateCommitError> {
+        self.create_external_commit_internal(
+            params,
+            provider,
+            signer,
+        )
+    }
+
     pub(crate) fn create_external_commit<Provider: OpenMlsProvider>(
         &mut self,
         params: CreateCommitParams,
         provider: &Provider,
         signer: &impl Signer,
     ) -> Result<CreateCommitResult, CreateCommitError> {
+        let (result, _path_computation_result) = self.create_external_commit_internal(
+            params,
+            provider,
+            signer,
+        )?;
+        Ok(result)
+    }
+
+    fn create_external_commit_internal<Provider: OpenMlsProvider>(
+        &mut self,
+        params: CreateCommitParams,
+        provider: &Provider,
+        signer: &impl Signer,
+    ) -> Result<(CreateCommitResult, PathComputationResult), CreateCommitError> {
         // We  are building an external commit. This means we have to pull the
         // framing parameters out of the create commit parameteres instead of the group. Since
         // these are set together with the group mode, we can be sure that this is `Some(..)` (see
@@ -194,6 +221,7 @@ impl MlsGroup {
                 PathComputationResult::default()
             };
 
+        let path_result = path_computation_result.clone();
         let update_path_leaf_node = path_computation_result
             .encrypted_path
             .as_ref()
@@ -377,11 +405,11 @@ impl MlsGroup {
             StagedCommitState::GroupMember(Box::new(staged_commit_state)),
         );
 
-        Ok(CreateCommitResult {
+        Ok((CreateCommitResult {
             commit: authenticated_content,
             welcome_option,
             staged_commit,
             group_info: group_info.filter(|_| self.configuration().use_ratchet_tree_extension),
-        })
+        }, path_result))
     }
 }

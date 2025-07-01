@@ -1,6 +1,6 @@
 [meta]
 # Number of clients to execute in paralel inside a single image
-replicas = 10
+replicas = 1
 
 [cgka]
 # Delivery Service. Options: ["request", "mqtt", "gossipsub"]
@@ -8,13 +8,15 @@ ds = "mqtt"
 
 
 # Groups the user will try to create/join
-groups = ["group_AAA"]
+groups = ["group_BBB"]
+# Max number of members in a group. Clients will not invite users if the group already has this many members. "0" to disable this limit.
+max_members = 0
 # Whether or not the client will atempt to perform "External Joins"
 external_join = false
 # Probability of creating the group (if it does not exist) and/or perform "External Join" 
 join_chance = 0.01
 # Probability of issuing an update (Commit or Proposal)
-issue_update_chance = 1
+issue_update_chance = 0.5
 # Probability of issuing a randomly generated application message 
 message_chance = 0
 # Reduce "issue_update_chance" and "message_chance" dinamically in function of current number of members
@@ -39,7 +41,7 @@ update_chance = 0
 # Chosen paradigm. Options: ["commit", "propose"]
 paradigm = "commit"
 # If paradigm = "propose", number of proposals included in each commit
-proposals_per_commit = 2
+proposals_per_commit = 1
 
 
 [http_server]

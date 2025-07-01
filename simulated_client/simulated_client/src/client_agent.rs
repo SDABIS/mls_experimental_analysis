@@ -8,9 +8,9 @@ use rand::Rng;
 use rumqttc::{AsyncClient, MqttOptions};
 use url::Url;
 use std::io::Write;
+
 use rand::distributions::Alphanumeric;
 use crate::pubsub::mqtt_updater::MqttUpdater;
-use crate::pubsub::Broker;
 use crate::pubsub::gossipsub_broker::GossipSubBroker;
 use crate::pubsub::gossipsub_updater::{GossipSubQueueMessage, GossipSubUpdater};
 use crate::pubsub::mqtt_broker::MqttBroker;
@@ -22,24 +22,34 @@ pub struct ActionRecord {
     pub group_name: String,
     pub action: CGKAAction,
     pub epoch_change: EpochChange,
-    pub elapsed_time: u128
+    pub elapsed_time: u128,
+    pub num_users: usize,
 }
 
 #[derive(Debug, Clone)]
 pub enum CGKAAction {
+    // Proposed action
     Propose(Box<CGKAAction>),
-    Commit(usize, usize),
-    Join(usize, usize),
+    // Number of proposals, size of commit, number of ciphertexts
+    Commit(usize, usize, usize),
+    // Size of commit, size of group info, number of ciphertexts
+    Join(usize, usize, usize),
+    // Size of commit
     Update(usize),
-    Invite(String, usize),
+    // Invited user, size of commit, number of ciphertexts
+    Invite(String, usize, usize),
+    // Removed user, size of commit
     Remove(String, usize),
+    // User who committed
     Process(String),
+    // User who proposed
     StoreProp(String),
+    // User who committed
     Welcome(String, usize),
     Create,
 
-    SetRecord,
-    RecvRecord,
+    // Attempted commit
+    CommitAttempt(Box<CGKAAction>),
 }
 
 pub struct ActionWithTime {
@@ -50,10 +60,10 @@ impl Display for CGKAAction {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
             CGKAAction::Propose(action) => {write!(f, "Propose {}", action)},
-            CGKAAction::Commit(proposals, size) => {write!(f, "Commit {proposals} {size}")}
-            CGKAAction::Join(c_size, gi_size) => {write!(f, "Join {c_size} {gi_size}")}
+            CGKAAction::Commit(proposals, size, ciphertexts) => {write!(f, "Commit {proposals} {size} {ciphertexts}")}
+            CGKAAction::Join(c_size, gi_size, ciphertexts) => {write!(f, "Join {c_size} {gi_size} {ciphertexts}")}
             CGKAAction::Update(size) => {write!(f, "Update {size}")}
-            CGKAAction::Invite(user, size) => {write!(f, "Invite {user} {size}")}
+            CGKAAction::Invite(user, size, ciphertexts) => {write!(f, "Invite {user} {size} {ciphertexts}")}
             CGKAAction::Remove(user, size) => {write!(f, "Remove {user} {size}")}
             CGKAAction::Process(user) => {
                 match user.as_str() {
@@ -74,15 +84,16 @@ impl Display for CGKAAction {
                 }
             }
             CGKAAction::Create => {write!(f, "Create")}
-            CGKAAction::SetRecord => {write!(f, "SetRecord")}
-            CGKAAction::RecvRecord => {write!(f, "RecvRecord")}
+            CGKAAction::CommitAttempt(action) => {write!(f, "CommitAttempt {}", action)}
         }
     }
 }
 
 pub struct ClientAgent {
     username: String,
-    parameters: UserParameters
+    parameters: UserParameters,
+
+    pub existing_groups: Vec<String>,
 }
 
 impl ClientAgent {
@@ -92,7 +103,9 @@ impl ClientAgent {
     ) -> Self {
         ClientAgent {
             username: name,
-            parameters
+            parameters,
+
+            existing_groups: Vec::new(),
         }
     }
 
@@ -123,8 +136,7 @@ impl ClientAgent {
 
                     let (async_client, event_loop) = AsyncClient::new(mqtt_options, 200);
 
-                    let mut broker = MqttBroker::new_from_client(async_client);
-                    //broker.subscribe_welcome(username.clone())?;
+                    let broker = MqttBroker::new_from_client(async_client);
 
                     let broker = Arc::new(Mutex::new(broker));
                     let ds = DeliveryService::PubSubMQTT(Arc::clone(&broker));
@@ -152,14 +164,13 @@ impl ClientAgent {
                 for i in 0..replicas {
                     let name = format!("{}_{}",username, i);
 
-                    let mut broker = GossipSubBroker::new(name.clone(), tx.clone());
+                    let broker = GossipSubBroker::new(name.clone(), tx.clone());
 
                     let broker = Arc::new(Mutex::new(broker));
                     let ds = DeliveryService::GossipSub(Arc::clone(&broker), config.directory.clone());
 
                     let user = User::new(name.clone(), user_parameters.server_url.clone(), ds.clone());
                     let user = Arc::new(Mutex::new(user));
-                    //log::info!("{} -> Creating GossipSubUpdater", self.username);
 
                     users.insert(name, user.clone());
                 }
@@ -168,7 +179,6 @@ impl ClientAgent {
                     .iter().map(|(name, u)| (name.clone(), Arc::clone(u))).collect();
 
                 let mut gossipsub_updater = GossipSubUpdater::new(username.clone(), users_thread, config.clone(), rx);
-                //let contact_info = gossipsub_updater.init(address_str).clone();
 
                 thread::spawn(move || {
                     gossipsub_updater.run();
@@ -182,7 +192,7 @@ impl ClientAgent {
         }
     }
 
-    pub fn run(&self, user: Arc<Mutex<User>>) {
+    pub fn run(&mut self, user: Arc<Mutex<User>>) {
         log::info!("Starting user {}", self.username);
 
         let mut rng = rand::thread_rng();
@@ -231,119 +241,47 @@ impl ClientAgent {
 
                     if rng.gen::<f64>() < self.scale(self.parameters.issue_update_chance, &user, group_name.clone()) {
                         // Issue an update
-                        let mut rng = rand::thread_rng();
+
+                        // Handle max members
+                        if self.parameters.max_members != 0 {
+                            // If max members is reached, ignore probabilities and add/remove/update with equal probability
+                            if user.number_of_members(group_name.clone()) >= self.parameters.max_members {
+                                //log::info!("{} -> Max members reached in {}, skipping update", self.username, group_name);
+                                match self.remove_from_group(&mut user, group_name.clone()) {
+                                    Ok(_) => {}
+                                    Err(e) => { log::error!("{} -> Error removing user: {}", self.username, e); }
+                                }
+
+                                continue;
+                            }
+                        }
+
+
                         let random_value: f64 = rng.gen_range(0.0..1.0);
 
                         if random_value < self.parameters.invite_chance {
-                            match user.update_clients() {
+                            //invite random user from group
+                            match self.invite_user(&mut user, group_name.clone()) {
                                 Ok(_) => {}
-                                Err(e) => { log::error!("Error updating clients: {}", e); }
-                            };
-
-                            //add random user from group
-                            let candidates = user.not_members_of_group(group_name.clone());
-
-                            log::info!("{}: {} candidates to invite", self.username, candidates.len());
-
-                            if candidates.len() == 0 {
-                                log::info!("{}: No candidates to invite", self.username);
-                                continue;
-                            }
-
-                            let user_to_add = candidates[rng.gen_range(0..candidates.len())].clone();
-                            match self.parameters.paradigm {
-                                Paradigm::Commit => {
-                                    //Mutex
-                                    if let Err(_) = user.get_group_info(group_name.clone()) {
-                                        continue;
-                                    }
-
-                                    log::info!("{} -> Inviting {} to {}", self.username, user_to_add, group_name);
-                                    match user.invite(user_to_add.clone(), group_name.clone()) {
-                                        Ok(_) => {},
-                                        Err(error) => {
-                                            log::error!("Error inviting user: {}", error);
-                                            user.publish_group_info(group_name.clone()).unwrap();
-                                        },
-                                    }
-                                    continue;
-                                }
-                                Paradigm::Propose => {
-                                    log::info!("{} -> Proposing Invite {} to {}", self.username, user_to_add, group_name);
-                                    let action = CGKAAction::Invite(user_to_add, 0);
-                                    match user.propose(action, group_name.clone()) {
-                                        Ok(_) => {},
-                                        Err(error) => {
-                                            log::error!("Error proposing Invite: {}", error);
-                                        },
-                                    }
-                                }
+                                Err(e) => {log::error!("{} -> Error inviting user: {}", self.username, e);}
                             }
                         }
                         else if random_value < (self.parameters.invite_chance + self.parameters.remove_chance) {
-
                             //remove random user from group
-                            let members = user.members_of_group(group_name.clone());
-                            if members.len() == 0 {
-                                continue;
-                            }
-
-                            let user_to_remove = members[rng.gen_range(0..members.len())].clone();
-
-                            match self.parameters.paradigm {
-                                Paradigm::Commit => {
-                                    //Mutex
-                                    if let Err(_) = user.get_group_info(group_name.clone()) {continue;}
-
-                                    log::info!("{} -> Removing {} from {}", self.username, user_to_remove, group_name);
-                                    match user.remove(user_to_remove.clone(), group_name.clone()) {
-                                        Ok(_) => {},
-                                        Err(error) => {
-                                            log::error!("Error removing user: {}", error);
-                                        },
-                                    }
-                                    continue;
-                                }
-                                Paradigm::Propose => {
-                                    log::info!("{} -> Proposing Remove {} from {}", self.username, user_to_remove, group_name);
-                                    let action = CGKAAction::Remove(user_to_remove, 0);
-                                    match user.propose(action, group_name.clone()) {
-                                        Ok(_) => {},
-                                        Err(error) => {
-                                            log::error!("Error proposing Remove: {}", error);
-                                        },
-                                    }
-                                }
+                            match self.remove_from_group(&mut user, group_name.clone()) {
+                                Ok(_) => {}
+                                Err(e) => {log::error!("{} -> Error removing user: {}", self.username, e);}
                             }
                         }
                         else {
-                            match self.parameters.paradigm {
-                                Paradigm::Commit => {
-                                    //Mutex
-                                    if let Err(_) = user.get_group_info(group_name.clone()) {continue;}
-
-                                    log::info!("{} -> Updating in {}", self.username, group_name);
-                                    match user.update_state(group_name.clone()) {
-                                        Ok(_) => {},
-                                        Err(error) => {
-                                            log::error!("Error updating user: {}", error);
-                                        },
-                                    }
-                                    continue;
-                                }
-                                Paradigm::Propose => {
-
-                                    let action = CGKAAction::Update(0);
-                                    log::info!("{} -> Proposing Update in {}", self.username, group_name);
-                                    match user.propose(action, group_name.clone()) {
-                                        Ok(_) => {},
-                                        Err(error) => {
-                                            log::error!("Error proposing user: {}", error);
-                                        },
-                                    }
-                                }
+                            //update group
+                            match self.update_group(&mut user, group_name.clone()) {
+                                Ok(_) => {}
+                                Err(e) => {log::error!("{} -> Error updating group: {}", self.username, e);}
                             }
                         }
+
+                        if self.parameters.paradigm != Paradigm::Propose {continue;}
                     }
 
                     if rng.gen::<f64>() < self.scale(self.parameters.issue_update_chance, &user, group_name.clone())
@@ -388,9 +326,17 @@ impl ClientAgent {
                     }
 
                     if rng.gen::<f64>() < self.parameters.join_chance {
-                        let group_exists = match user.group_exists(group_name.clone()) {
-                            Ok(a) => a,
-                            Err(_) => continue,
+                    
+                        let group_exists = {
+                            if self.existing_groups.contains(group_name) {
+                                true
+                            }
+                            else {
+                                match user.group_exists(group_name.clone()) {
+                                    Ok(a) => a,
+                                    Err(_) => continue,
+                                }
+                            }
                         };
                         if !group_exists {
                             log::info!("{} -> Creating group {}", self.username, group_name);
@@ -403,22 +349,18 @@ impl ClientAgent {
                             continue;
                         }
 
+                        self.existing_groups.push(group_name.clone());
                         if self.parameters.external_join {
                             match user.get_group_info(group_name.clone()) {
                                 Ok(group_info) => {
                                     log::info!("{} IS JOINING GROUP {}", self.username, group_name);
-                                    //log::info!("\tGroup Info downloaded");
 
                                     match user.external_join(group_name.to_string(), group_info) {
-                                        Ok(_) => {
-                                            //log::info!("{} joined group", self.username);
-                                            //ClientAgent::write_timestamp(self.username.clone(), ec, group_name.clone(), CGKAAction::Join);
-                                        },
+                                        Ok(_) => {},
                                         Err(error) => {
                                             log::error!("Error performing external join: {}", error);
                                         }
                                     };
-                                    //current_members.push(self.username.clone());
                                 },
                                 Err(error) => {
                                     if error.contains("403") {
@@ -432,16 +374,134 @@ impl ClientAgent {
 
                 drop(user);
             }
-            //drop(current_members);
+        }
+    }
+
+    fn invite_user(&self, user: &mut User, group_name: String) -> Result<(), String> {
+        let mut rng = rand::thread_rng();
+        match user.update_clients() {
+            Ok(_) => {}
+            Err(e) => { return Err(format!("Error updating clients: {}", e)); }
+        };
+
+        //add random user from group
+        let candidates = user.not_members_of_group(group_name.clone());
+
+        //log::info!("{}: {} candidates to invite", self.username, candidates.len());
+
+        if candidates.len() == 0 {
+            return Err("No candidates to invite".to_string());
+        }
+
+        let user_to_add = candidates[rng.gen_range(0..candidates.len())].clone();
+        match self.parameters.paradigm {
+            Paradigm::Commit => {
+                //Mutex
+                if let Err(_) = user.get_group_info(group_name.clone()) {
+
+                    return Ok(());
+                }
+
+                log::info!("{} -> Inviting {} to {}", self.username, user_to_add, group_name);
+                match user.invite(user_to_add.clone(), group_name.clone()) {
+                    Ok(_) => {Ok(())},
+                    Err(error) => {
+                        user.publish_group_info(group_name.clone()).unwrap();
+                        return Err(format!("Error inviting user: {}", error));
+                    },
+                }
+            }
+            Paradigm::Propose => {
+                log::info!("{} -> Proposing Invite {} to {}", self.username, user_to_add, group_name);
+                let action = CGKAAction::Invite(user_to_add, 0, 0);
+                match user.propose(action, group_name.clone()) {
+                    Ok(_) => {Ok(())},
+                    Err(error) => {
+                        return Err(format!("Error proposing Invite: {}", error));
+                    },
+                }
+            }
+        }
+    }
+
+    fn remove_from_group(&self, user: &mut User, group_name: String) -> Result<(), String>{
+        let mut rng = rand::thread_rng();
+
+        let members = user.members_of_group(group_name.clone());
+        if members.len() == 0 {
+            return Err("No candidates to remove".to_string());
+        }
+
+        let user_to_remove = members[rng.gen_range(0..members.len())].clone();
+
+        match self.parameters.paradigm {
+            Paradigm::Commit => {
+                //Mutex
+                if let Err(_) = user.get_group_info(group_name.clone()) {
+                    return Ok(());
+                }
+
+                log::info!("{} -> Removing {} from {}", self.username, user_to_remove, group_name);
+                match user.remove(user_to_remove.clone(), group_name.clone()) {
+                    Ok(_) => { Ok(()) },
+                    Err(error) => {
+                        user.publish_group_info(group_name.clone()).unwrap();
+                        Err(format!("Error removing user: {}", error))
+                    },
+                }
+            }
+            Paradigm::Propose => {
+                log::info!("{} -> Proposing Remove {} from {}", self.username, user_to_remove, group_name);
+                let action = CGKAAction::Remove(user_to_remove, 0);
+                match user.propose(action, group_name.clone()) {
+                    Ok(_) => { Ok(()) },
+                    Err(error) => {
+                        Err(format!("Error proposing Remove: {}", error))
+                    },
+                }
+            }
+        }
+    }
+
+    fn update_group(&self, user: &mut User, group_name: String) -> Result<(), String> {
+        match self.parameters.paradigm {
+            Paradigm::Commit => {
+                //Mutex
+                if let Err(_) = user.get_group_info(group_name.clone()) {
+                    return Ok(());
+                }
+
+                log::info!("{} -> Updating in {}", self.username, group_name);
+                match user.update_state(group_name.clone()) {
+                    Ok(_) => {Ok(())},
+                    Err(error) => {
+                        user.publish_group_info(group_name.clone()).unwrap();
+                        Err(format!("Error updating user: {}", error))
+                    },
+                }
+            }
+            Paradigm::Propose => {
+
+                let action = CGKAAction::Update(0);
+                log::info!("{} -> Proposing Update in {}", self.username, group_name);
+                match user.propose(action, group_name.clone()) {
+                    Ok(_) => {Ok(())},
+                    Err(error) => {
+                        Err(format!("Error proposing user: {}", error))
+                    },
+                }
+            }
         }
     }
 
     pub fn write_timestamp(username: String, action_record: ActionRecord) {
-        let ActionRecord {group_name, action, epoch_change, elapsed_time} = action_record;
+        let ActionRecord {group_name, action, epoch_change, elapsed_time, num_users} = action_record;
 
         let mut to_write = group_name.clone();
         to_write.push_str(" ");
         to_write.push_str(epoch_change.epoch.to_string().as_str());
+        to_write.push_str(" ");
+        to_write.push_str(num_users.to_string().as_str());
         to_write.push_str(" ");
         to_write.push_str(&username);
         to_write.push_str(" ");
@@ -463,9 +523,9 @@ impl ClientAgent {
         }
     }
 
-    pub fn scale(&self,  value: f64, user: &User, group_name: String) -> f64 {
+    pub fn scale(&self, value: f64, user: &User, group_name: String) -> f64 {
         if self.parameters.scale {
-            let members = user.members_of_group(group_name.clone()).len() + 1;
+            let members = user.number_of_members(group_name.clone());
             value / (members+1) as f64
         }
 

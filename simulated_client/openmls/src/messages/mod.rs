@@ -263,6 +263,10 @@ impl CommitIn {
         };
         Ok(Commit { proposals, path })
     }
+
+    pub(crate) fn path(&self) -> Option<UpdatePathIn>{
+        self.path.clone()
+    }
 }
 
 // The following `From` implementation( breaks abstraction layers and MUST

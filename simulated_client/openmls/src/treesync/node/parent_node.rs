@@ -50,9 +50,7 @@ impl From<EncryptionKey> for ParentNode {
     }
 }
 
-/// Helper struct for the encryption of a [`ParentNode`].
-#[cfg_attr(test, derive(Clone))]
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub(crate) struct PlainUpdatePathNode {
     public_key: EncryptionKey,
     path_secret: PathSecret,

@@ -114,6 +114,40 @@ impl MlsGroup {
         Ok((commit, welcome, group_info))
     }
 
+    pub fn add_members_with_path<Provider: OpenMlsProvider>(
+        &mut self,
+        provider: &Provider,
+        signer: &impl Signer,
+        key_packages: &[KeyPackage],
+    ) -> Result<
+        (MlsMessageOut, MlsMessageOut, Option<GroupInfo>, PathComputationResult),
+        AddMembersError<Provider::StorageError>,
+    > {
+        self.is_operational()?;
+
+        if key_packages.is_empty() {
+            return Err(AddMembersError::EmptyInput(EmptyInputError::AddMembers));
+        }
+
+        let (builder, path) = self
+            .commit_builder()
+            .propose_adds(key_packages.iter().cloned())
+            .force_self_update(true)
+            .load_psks(provider.storage())?
+            .build_with_path(provider.rand(), provider.crypto(), signer, |_| true)?;
+
+        let bundle = builder.stage_commit(provider)?;
+
+        let welcome: MlsMessageOut = bundle.to_welcome_msg().ok_or(LibraryError::custom(
+            "No secrets to generate commit message.",
+        ))?;
+        let (commit, _, group_info) = bundle.into_contents();
+
+        self.reset_aad();
+
+        Ok((commit, welcome, group_info, path))
+    }
+
     /// Returns a reference to the own [`LeafNode`].
     pub fn own_leaf(&self) -> Option<&LeafNode> {
         self.public_group().leaf(self.own_leaf_index())

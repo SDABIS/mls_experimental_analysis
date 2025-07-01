@@ -5,6 +5,7 @@ from sklearn.metrics import r2_score
 import numpy as np
 
 x_label = "num_users"
+size_limit = 1000
 
 def compare_r2_score(x, y):
     # Linear
@@ -27,7 +28,7 @@ def compare_r2_score(x, y):
 
 def group_and_average(df):
     df = df.sort_values(by=x_label)  
-    df[x_label] = (df[x_label] // 20) * 20
+    df[x_label] = (df[x_label] // 30) * 30
     return df.groupby(['group', x_label]).agg({
         'gen_elapsed_mean': 'mean',
         'processing_elapsed_mean': 'mean',
@@ -56,7 +57,7 @@ for operation, y_label in zip(operations, y_labels):
         data = pd.read_csv(file_path)
 
         data = group_and_average(data)
-        #data = data[data[x_label] < 750]
+        data = data[data[x_label] < size_limit]
 
         data[x_label] = pd.to_numeric(data[x_label], errors='coerce')
         data[operation] = pd.to_numeric(data[operation], errors='coerce')
@@ -69,12 +70,10 @@ for operation, y_label in zip(operations, y_labels):
 
     plt.xlabel('Users')
     plt.ylabel(y_label)
-    #plt.yscale("log")
-    #plt.title('Mean message size')
     plt.legend()
     plt.grid(True)
     plt.tight_layout()
-    plt.savefig(operation + ".pdf")
+    plt.savefig("figures/" + operation + ".pdf")
     plt.show()
 
     all_lines.append(operation_lines)
