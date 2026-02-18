@@ -1,7 +1,7 @@
 **/Cargo.lock
 **/target
 
-/environment/client/simulated_client
+/environment/client/emulated_client
 /environment/client/logs
 
 /environment/server/mls-ds

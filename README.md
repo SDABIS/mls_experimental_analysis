@@ -3,7 +3,7 @@
 Environment for the simulation of Messaging Layer Security (MLS) groups, as specified in [our paper](). We refer to our publication for definitions of terms employed in this project.
 
 This project is divided into 2 folders:
-- [*/simulated_client*](./simulated_client): Contains the Rust project for the simulated MLS client and its interaction with the Delivery Services. 
+- [*/emulated_client*](./emulated_client): Contains the Rust project for the emulated MLS client and its interaction with the Delivery Services. 
 - [*/environment*](./environment): Contains scripts to build and deploy the simulation environment, as well as the configuration files
 
 ## Dependencies
@@ -36,8 +36,8 @@ IMPORTANT: the *log_parser.sh* script will read every log file in the folder. Re
 
 ## Implementation
 
-Our implementation is based on [OpenMLS](https://github.com/openmls/openmls), a Rust implementation of the Messaging Layer Security (MLS) protocol, as specified in [RFC 9420](https://datatracker.ietf.org/doc/html/rfc9420). We apply very small modifications to OpenMLS, mostly to function interfaces. We also use their implementation of a Delivery Service (modules [ds](./simulated_client/delivery-service/ds/) and [ds-lib](./simulated_client/delivery-service/ds-lib/)) as a baseline for our Directory and Signaling Server.
+Our implementation is based on [OpenMLS](https://github.com/openmls/openmls), a Rust implementation of the Messaging Layer Security (MLS) protocol, as specified in [RFC 9420](https://datatracker.ietf.org/doc/html/rfc9420). We apply very small modifications to OpenMLS, mostly to function interfaces. We also use their implementation of a Delivery Service (modules [ds](./emulated_client/delivery-service/ds/) and [ds-lib](./emulated_client/delivery-service/ds-lib/)) as a baseline for our Directory and Signaling Server.
 
-Our main contribution is in the module [simulated_client](./simulated_client/simulated_client/), which autonomously acts as one or more MLS clients and sends and receives messages through the Delivery Service.  
+Our main contribution is in the module [emulated_client](./emulated_client/emulated_client/), which autonomously acts as one or more MLS clients and sends and receives messages through the Delivery Service.  
 
 For the implementation of the Delivery Services we employ the crates [rumqttc](https://crates.io/crates/rumqttc) and [rust-libp2p](https://github.com/libp2p/rust-libp2p).

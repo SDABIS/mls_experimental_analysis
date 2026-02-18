@@ -29,7 +29,7 @@ while getopts "c:sh" opt; do
 done
 
 if $start_c; then
-    docker network create mls_network --driver overlay --subnet 10.0.0.0/16 --ip-range 10.0.0.0/16 --scope swarm
+    docker network create mls_network --driver overlay --subnet 172.31.0.0/16 --ip-range 172.31.0.0/16 --scope swarm
     echo "Starting ${client_replicas} clients"
     REPLICAS=${client_replicas} docker stack deploy -c client/docker-compose.yml mls
 fi
@@ -37,7 +37,7 @@ fi
 if $start_s; then
     echo "Starting server"
     cd ./server
-    docker compose up -d 
+    docker compose up 
 fi
 
 if ! $start_c && ! $start_s; then

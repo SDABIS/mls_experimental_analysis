@@ -4,8 +4,17 @@ from sklearn.linear_model import LinearRegression
 from sklearn.metrics import r2_score
 import numpy as np
 
+plt.rcParams.update({
+    "font.size": 14,
+    "axes.titlesize": 16,
+    "axes.labelsize": 14,
+    "legend.fontsize": 13,
+    "xtick.labelsize": 12,
+    "ytick.labelsize": 12,
+})
+
 x_label = "num_users"
-size_limit = 1000
+size_limit = 10000
 
 def compare_r2_score(x, y):
     # Linear
@@ -28,28 +37,28 @@ def compare_r2_score(x, y):
 
 def group_and_average(df):
     df = df.sort_values(by=x_label)  
-    df[x_label] = (df[x_label] // 30) * 30
+    df[x_label] = (df[x_label] // 100) * 100
     return df.groupby(['group', x_label]).agg({
         'gen_elapsed_mean': 'mean',
         'processing_elapsed_mean': 'mean',
         'sizes_mean': 'mean',
     }).reset_index()
 
-folder_path = "."
+folder_path = "data"
 
 operations = ['gen_elapsed_mean', "processing_elapsed_mean", "sizes_mean"]
-y_labels = ['Generation time (microseconds)', 'Processing time (microseconds)', 'Size per update (Bytes)']
+y_labels = ['Generation time (milliseconds)', 'Processing time (milliseconds)', 'Size per update (KB)']
 
-line_names = ["Commit", "1 Prop", "2 Prop", "4 Prop", "8 Prop"]
-files = ['grouped_logs_commit.csv', "grouped_logs_prop_1.csv", 'grouped_logs_prop_2.csv', "grouped_logs_prop_4.csv", "grouped_logs_prop_8.csv"]
+line_names = ["Commit", "2 Prop", "4 Prop", "8 Prop"]
+files = ['commit.csv', 'prop_2.csv', "prop_4_2.csv", "prop_8.csv"]
 
-#line_names = ["First", "Random", "Last"]
-#files = ['grouped_logs_FIRST.csv', "grouped_logs_RANDOM.csv", "grouped_logs_LAST.csv"]
+#line_names = ["First", "Last", "Commit"]
+#files = ["first.csv", "test_10000_opt_LAST.csv", "commit.csv"]
 
 all_lines = []
 for operation, y_label in zip(operations, y_labels):
     operation_lines = []
-    plt.figure(figsize=(8, 6))
+    plt.figure(figsize=(8, 5))
 
     for i in range(len(files)):
         # Load CSV
@@ -58,15 +67,18 @@ for operation, y_label in zip(operations, y_labels):
 
         data = group_and_average(data)
         data = data[data[x_label] < size_limit]
+        data = data[data[x_label] > 100]
 
         data[x_label] = pd.to_numeric(data[x_label], errors='coerce')
         data[operation] = pd.to_numeric(data[operation], errors='coerce')
         data[x_label] = data[x_label].fillna(0).astype(int)
 
+        data[operation] = data[operation] / 1000  # Convert to milliseconds if time, or to KB if size
+
         #compare_r2_score(data[x_label].values, data[operation].sort_values)
 
         operation_lines.append(data[operation])
-        plt.plot(data[x_label], data[operation], label=line_names[i])
+        plt.plot(data[x_label], data[operation], label=line_names[i], marker='.')
 
     plt.xlabel('Users')
     plt.ylabel(y_label)

@@ -6,4 +6,4 @@ INSTANCE_NAME="User_${INDEX}"
 export RUST_LOG="info"
 export RUST_BACKTRACE=1
 # Ejecutar el programa principal pasando INSTANCE_NAME como argumento
-./simulated_client -n "$INSTANCE_NAME" -c "./Settings.toml"
+./emulated_client -n "$INSTANCE_NAME" -c "./Settings.toml"

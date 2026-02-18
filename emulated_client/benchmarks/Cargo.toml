@@ -1,0 +1,26 @@
+[package]
+name = "benchmarks"
+
+[dev-dependencies]
+criterion = { version = "0.7.0", features = ["html_reports"] }
+cargo-criterion = "1.1.0"
+
+[dependencies]
+cpu-time = "1.0.0"
+url = "2.5.4"
+clap = { version = "4.5.41", features = ["derive"] }
+pretty_env_logger = "0.5.0"
+openmls = { path = "../openmls", features = ["test-utils"] }
+ds-lib = { path = "../delivery-service/ds-lib" }
+openmls_traits = { path = "../traits" }
+openmls_rust_crypto = { path = "../openmls_rust_crypto" }
+openmls_memory_storage = { path = "../memory_storage", features = ["persistence"] }
+openmls_basic_credential = { path = "../basic_credential" }
+emulated_client = { path = "../emulated_client" }
+rand = "0.9.0"
+mls-rs = "0.51.0"
+mls-rs-crypto-openssl = "0.18.0"
+
+[[bench]]
+name = "benchmarks"
+harness = false

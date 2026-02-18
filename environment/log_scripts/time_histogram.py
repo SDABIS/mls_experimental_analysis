@@ -15,13 +15,13 @@ def remove_outliers(latencies):
     upper_bound = Q3 + 1.5 * IQR
     return [latency for latency in latencies if lower_bound <= latency <= upper_bound]
 
-num_users = 100
+num_users = 750
 folder_path = "data"
 
-operations = ['gen_time', "process_times_mean", "process_times", "commit_size", "number_of_ciphertexts"]
-x_labels = ['Generation time (microseconds)', 'Processing time (microseconds)', 'Processing time (microseconds)', 'Size (Bytes)', 'Number of ciphertexts']
+operations = ['gen_time', "process_times_mean", "process_times", "commit_size"]
+x_labels = ['Generation time (milliseconds)', 'Processing time (milliseconds)', 'Processing time (milliseconds)', 'Size (KB)']
 
-file = f'raw_grouped_logs_{num_users}.csv'
+file = f'test_stable_{num_users}.csv'
 
 file_path = folder_path + "/" + file
 data = pd.read_csv(file_path)
@@ -33,7 +33,7 @@ for operation, x_label in zip(operations, x_labels):
     values = data[data['num_users'] == num_users][operation]
     values = values.apply(ast.literal_eval)
     values = values.explode() 
-    values = values[values != 0].astype(float)
+    values = values[values != 0].astype(float) / 1000
 
     values = remove_outliers(values)
     #percentile_99 = np.percentile(values, 99.9)

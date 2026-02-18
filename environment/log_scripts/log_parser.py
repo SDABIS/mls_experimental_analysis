@@ -70,7 +70,7 @@ def calculate_gen_elapsed(row):
 pd.options.display.max_columns = None
 log_directory = '../client/logs'
 
-options = ["outliers", "ignore_zeros", "ignore_remove"]
+options = ["outliers", "ignore_zeros"]
 log_files = glob.glob(os.path.join(log_directory, '*.txt'))
 
 data_frames = []
@@ -82,111 +82,109 @@ def read_log_file(file):
             try: 
                 parts = line.split()
 
+                if len(parts) < 5:
+                    continue
                 # 5th element determines the operation
                 operation = parts[4]
 
+                # Default values
+                size = 0
+                other_size = 0
+                target_user_id = None
                 # Each operation is composed of different values
                 if operation in ['Create']:
                     group, epoch, num_users, user_id, operation, timestamp, elapsed = parts
-                    target_user_id = None
-                    size = 0
-                    other_size = 0
-                    number_of_ciphertexts = 0
                     number_of_proposals = 1
+
                 elif operation in ['Commit']:
-                    group, epoch, num_users, user_id, operation, number_of_proposals, size, number_of_ciphertexts, timestamp, elapsed = parts
-                    other_size = 0
-                    target_user_id = None
+                    group, epoch, num_users, user_id, operation, number_of_proposals, size, timestamp, elapsed = parts
+
+                # Compatibility with deep analysis
+                elif operation in ['DeepCommit']:
+                    group, epoch, num_users, user_id, operation, size, _bars, _, _, _, _, _, _, _, _, _bars_2, _, _, _bars_3, _, _bars_4, _, _, _, timestamp, elapsed = parts
+                    number_of_proposals = 1
+                # Compatibility with deep analysis
+                elif operation in ['DeepProcess']:
+                    group, epoch, num_users, user_id, operation, _bars, target_user_id, _, _, _, _, _, _, _, _, _bars_2, _, _, _, timestamp, elapsed = parts
+
                 elif operation in ['Update']:  
                     group, epoch, num_users, user_id, operation, size, timestamp, elapsed = parts
-                    target_user_id = None
-                    number_of_ciphertexts = 0
-                    other_size = 0
                     number_of_proposals = 1
+
                 elif operation in ['Join']:
-                    group, epoch, num_users, user_id, operation, size, other_size, number_of_ciphertexts, timestamp, elapsed = parts
-                    target_user_id = None
+                    group, epoch, num_users, user_id, operation, size, other_size, timestamp, elapsed = parts
                     number_of_proposals = 1
+
                 elif operation in ['Invite']:
-                    group, epoch, num_users, user_id, operation, target_user_id, size, number_of_ciphertexts, timestamp, elapsed = parts
-                    other_size = 0
+                    group, epoch, num_users, user_id, operation, target_user_id, size, timestamp, elapsed = parts
                     number_of_proposals = 1
+
                 elif operation in ['Remove']:
                     if "ignore_remove" in options:
                         continue
                     group, epoch, num_users, user_id, operation, target_user_id, size, timestamp, elapsed = parts
-                    number_of_ciphertexts = 0
-                    other_size = 0
                     number_of_proposals = 1
+
                 elif operation in ['Process', 'StoreProp']:
                     if int(parts[-1]) == 0 and "ignore_zeros" in options:
                         continue
                     group, epoch, num_users, user_id, operation, target_user_id, timestamp, elapsed = parts
-                    number_of_ciphertexts = 0
-                    other_size = 0
-                    size = 0
                     number_of_proposals = 0
+                    
                 elif operation in ['Welcome']:
                     group, epoch, num_users, user_id, operation, target_user_id, other_size, timestamp, elapsed = parts
-                    number_of_ciphertexts = 0
-                    size = 0
                     number_of_proposals = 0
+
                 elif operation in ['Propose']:
                     sub_operation = parts[5]
                     if sub_operation in ['Invite']:
-                        group, epoch, num_users, user_id, operation, sub_operation, target_user_id, size, number_of_ciphertexts, timestamp, elapsed = parts
-                        other_size = 0
+                        group, epoch, num_users, user_id, operation, sub_operation, target_user_id, size, timestamp, elapsed = parts
                         number_of_proposals = 0
+
                     elif sub_operation in ['Remove']:
                         if "ignore_remove" in options:
                             continue
                         group, epoch, num_users, user_id, operation, sub_operation, target_user_id, size, timestamp, elapsed = parts
-                        number_of_ciphertexts = 0
-                        other_size = 0
                         number_of_proposals = 0
+
                     elif sub_operation in ['Update']:
                         group, epoch, num_users, user_id, operation, sub_operation, size, timestamp, elapsed = parts
-                        number_of_ciphertexts = 0
-                        other_size = 0
                         number_of_proposals = 0
                 
                 elif operation in ['CommitAttempt']:
                     sub_operation = parts[5]
-                    if sub_operation in ['Invite']:
-                        group, epoch, num_users, user_id, operation, sub_operation, target_user_id, size, number_of_ciphertexts, timestamp, elapsed = parts
-                        other_size = 0
+                    
+                    if sub_operation in ['Commit']:
+                        group, epoch, num_users, user_id, operation, sub_operation, number_of_proposals, size, timestamp, elapsed = parts
+                    
+                    elif sub_operation in ['Invite']:
+                        group, epoch, num_users, user_id, operation, sub_operation, target_user_id, size, timestamp, elapsed = parts
                         number_of_proposals = 1
+
                     elif sub_operation in ['Remove']:
                         if "ignore_remove" in options:
                             continue
                         group, epoch, num_users, user_id, operation, sub_operation, target_user_id, size, timestamp, elapsed = parts
-                        number_of_ciphertexts = 0
-                        other_size = 0
                         number_of_proposals = 1
+
                     elif sub_operation in ['Update']:
                         group, epoch, num_users, user_id, operation, sub_operation, size, timestamp, elapsed = parts
-                        number_of_ciphertexts = 0
-                        other_size = 0
                         number_of_proposals = 1
-                    elif sub_operation in ['Commit']:
-                        group, epoch, num_users, user_id, operation, sub_operation, number_of_proposals, size, number_of_ciphertexts, timestamp, elapsed = parts
-                        other_size = 0
-                        target_user_id = None
+
                     elif sub_operation in ['Join']:
-                        group, epoch, num_users, user_id, operation, sub_operation, size, other_size, number_of_ciphertexts, timestamp, elapsed = parts
-                        target_user_id = None
+                        group, epoch, num_users, user_id, operation, sub_operation, size, other_size, timestamp, elapsed = parts
                         number_of_proposals = 1
 
                 else:
                     continue
                 
                 # add new line to dataframe
-                data.append([group, int(epoch), int(num_users), user_id, operation, target_user_id, int(size), int(other_size), int(number_of_proposals), int(number_of_ciphertexts), int(timestamp), int(elapsed)])
-            except ValueError:
-                print(line)
+                data.append([group, int(epoch), int(num_users), user_id, operation, target_user_id, int(size), int(other_size), int(number_of_proposals), int(timestamp), int(elapsed)])
+            except ValueError as e:
+                print(line, e)
 
     # create dataframe with all lines
-    df = pd.DataFrame(data, columns=["group", "epoch", "num_users", "user_id", "operation", "target_user_id", "size", "other_size", "number_of_proposals", "number_of_ciphertexts", "timestamp", "elapsed_time"])
+    df = pd.DataFrame(data, columns=["group", "epoch", "num_users", "user_id", "operation", "target_user_id", "size", "other_size", "number_of_proposals", "timestamp", "elapsed_time"])
     return df
 
 # Parse all log files into a dataframe
@@ -197,10 +195,10 @@ for file in log_files:
 # Concatenate all dataframes
 all_logs_df = pd.concat(data_frames, ignore_index=True)
 
-epoch_generating_events = all_logs_df[all_logs_df['operation'].isin(['Commit', 'Update', 'Remove', 'Join', 'Create', 'Invite'])]
+epoch_generating_events = all_logs_df[all_logs_df['operation'].isin(['Commit', 'Update', 'Remove', 'Join', 'Create', 'Invite', 'DeepCommit'])]
 commit_attempt_events = all_logs_df[all_logs_df['operation'].isin(['CommitAttempt'])]
 propose_events = all_logs_df[all_logs_df['operation'].isin(['Propose'])]
-process_events = all_logs_df[all_logs_df['operation'].isin(['Process'])]
+process_events = all_logs_df[all_logs_df['operation'].isin(['Process', 'DeepProcess'])]
 welcome_events = all_logs_df[all_logs_df['operation'].isin(['Welcome'])]
 process_proposals_events = all_logs_df[all_logs_df['operation'].isin(['StoreProp'])]
 
@@ -213,22 +211,18 @@ epoch_generating_events_grouped = epoch_generating_events.groupby(['group', 'epo
     'elapsed_time': 'first',
     'other_size': 'max',
     'number_of_proposals': 'max',
-    'number_of_ciphertexts': 'max',
 }).reset_index()
 epoch_generating_events_grouped.rename(columns={'timestamp': 'epoch_generating_timestamp'}, inplace=True)
 epoch_generating_events_grouped.rename(columns={'other_size': 'join_size'}, inplace=True)
 epoch_generating_events_grouped.rename(columns={'elapsed_time': 'original_gen_time'}, inplace=True)
 epoch_generating_events_grouped.rename(columns={'size': 'original_size'}, inplace=True)
-epoch_generating_events_grouped.rename(columns={'number_of_ciphertexts': 'original_ciphertexts'}, inplace=True)
 
 commit_attempt_events_grouped = commit_attempt_events.groupby(['group', 'epoch']).agg({
     'size': list,
     'elapsed_time': list,
-    'number_of_ciphertexts': list,
 }).reset_index()
 commit_attempt_events_grouped.rename(columns={'size': 'commit_attempt_sizes'}, inplace=True)
 commit_attempt_events_grouped.rename(columns={'elapsed_time': 'commit_attempt_elapsed'}, inplace=True)
-commit_attempt_events_grouped.rename(columns={'number_of_ciphertexts': 'commit_attempt_ciphertexts'}, inplace=True)
 
 propose_events_grouped = propose_events.groupby(['group', 'epoch']).agg({
     'size': 'mean',
@@ -276,57 +270,56 @@ grouped_logs['latency'] = grouped_logs.apply(calculate_latency, axis=1)
 if "outliers" in options:
     grouped_logs['latency'] = grouped_logs['latency'].apply(remove_outliers)
 
-# raw logs
-raw_propose_events_grouped = propose_events.groupby(['group', 'epoch']).agg({
-    'size': list,
-    'elapsed_time': list,
-}).reset_index()
-raw_propose_events_grouped.rename(columns={'size': 'propose_sizes'}, inplace=True)
-raw_propose_events_grouped.rename(columns={'elapsed_time': 'propose_times'}, inplace=True)
+if "raw_logs" in options:
+    # raw logs
+    raw_propose_events_grouped = propose_events.groupby(['group', 'epoch']).agg({
+        'size': list,
+        'elapsed_time': list,
+    }).reset_index()
+    raw_propose_events_grouped.rename(columns={'size': 'propose_sizes'}, inplace=True)
+    raw_propose_events_grouped.rename(columns={'elapsed_time': 'propose_times'}, inplace=True)
 
-raw_process_events_grouped = process_events.groupby(['group', 'epoch']).agg({
-    'elapsed_time': list,
-}).reset_index()
-raw_process_events_grouped.rename(columns={'elapsed_time': 'process_times'}, inplace=True)
+    raw_process_events_grouped = process_events.groupby(['group', 'epoch']).agg({
+        'elapsed_time': list,
+    }).reset_index()
+    raw_process_events_grouped.rename(columns={'elapsed_time': 'process_times'}, inplace=True)
 
-raw_welcome_events_grouped = welcome_events.groupby(['group', 'epoch']).agg({
-    'elapsed_time': list,
-    'other_size': list,
-}).reset_index()
-raw_welcome_events_grouped.rename(columns={'other_size': 'welcome_sizes'}, inplace=True)
-raw_welcome_events_grouped.rename(columns={'elapsed_time': 'welcome_times'}, inplace=True)
+    raw_welcome_events_grouped = welcome_events.groupby(['group', 'epoch']).agg({
+        'elapsed_time': list,
+        'other_size': list,
+    }).reset_index()
+    raw_welcome_events_grouped.rename(columns={'other_size': 'welcome_sizes'}, inplace=True)
+    raw_welcome_events_grouped.rename(columns={'elapsed_time': 'welcome_times'}, inplace=True)
 
-raw_process_proposals_events_grouped = process_proposals_events.groupby(['group', 'epoch']).agg({
-    'elapsed_time': list,
-}).reset_index()
-raw_process_proposals_events_grouped.rename(columns={'elapsed_time': 'storeprop_times'}, inplace=True)
+    raw_process_proposals_events_grouped = process_proposals_events.groupby(['group', 'epoch']).agg({
+        'elapsed_time': list,
+    }).reset_index()
+    raw_process_proposals_events_grouped.rename(columns={'elapsed_time': 'storeprop_times'}, inplace=True)
 
-raw_startpoint = grouped_logs[['group', 'epoch', 'latency', 'original_gen_time', 'original_ciphertexts', 'original_size', 'num_users', 'process_times']].copy()
-raw_startpoint.rename(columns={'process_times': 'process_times_mean'}, inplace=True)
-raw_grouped_logs = pd.merge(raw_startpoint, raw_propose_events_grouped, on=['group', 'epoch'], how='left')
-raw_grouped_logs = pd.merge(raw_grouped_logs, raw_process_events_grouped, on=['group', 'epoch'], how='left')
-raw_grouped_logs = pd.merge(raw_grouped_logs, raw_welcome_events_grouped, on=['group', 'epoch'], how='left')
-raw_grouped_logs = pd.merge(raw_grouped_logs, raw_process_proposals_events_grouped, on=['group', 'epoch'], how='left')
+    raw_startpoint = grouped_logs[['group', 'epoch', 'latency', 'original_gen_time', 'original_size', 'num_users', 'process_times']].copy()
+    raw_startpoint.rename(columns={'process_times': 'process_times_mean'}, inplace=True)
+    raw_grouped_logs = pd.merge(raw_startpoint, raw_propose_events_grouped, on=['group', 'epoch'], how='left')
+    raw_grouped_logs = pd.merge(raw_grouped_logs, raw_process_events_grouped, on=['group', 'epoch'], how='left')
+    raw_grouped_logs = pd.merge(raw_grouped_logs, raw_welcome_events_grouped, on=['group', 'epoch'], how='left')
+    raw_grouped_logs = pd.merge(raw_grouped_logs, raw_process_proposals_events_grouped, on=['group', 'epoch'], how='left')
 
-raw_grouped_logs = raw_grouped_logs.groupby(['group', 'num_users']).agg({
-    'propose_sizes': sum,
-    'propose_times': sum,
-    'process_times': sum,
-    'welcome_times': sum,
-    'welcome_sizes': sum,
-    'storeprop_times': sum,
-    'latency': sum,
-    'process_times_mean': list,
-    'original_gen_time': list,
-    'original_size': list,
-    'original_ciphertexts': list,
-}).reset_index()
+    raw_grouped_logs = raw_grouped_logs.groupby(['group', 'num_users']).agg({
+        'propose_sizes': sum,
+        'propose_times': sum,
+        'process_times': sum,
+        'welcome_times': sum,
+        'welcome_sizes': sum,
+        'storeprop_times': sum,
+        'latency': sum,
+        'process_times_mean': list,
+        'original_gen_time': list,
+        'original_size': list,
+    }).reset_index()
 
-raw_grouped_logs.rename(columns={
-    'original_gen_time': 'gen_time', 
-    'original_ciphertexts': 'number_of_ciphertexts', 
-    'original_size': 'commit_size'}, 
-    inplace=True)
+    raw_grouped_logs.rename(columns={
+        'original_gen_time': 'gen_time', 
+        'original_size': 'commit_size'}, 
+        inplace=True)
 
 # Add mean an max latency columns in seconds
 stats = grouped_logs['latency'].apply(calculate_latency_statistics)
@@ -339,14 +332,12 @@ grouped_logs = grouped_logs.sort_values(by=['group', 'epoch']).reset_index(drop=
 
 grouped_logs = mean_scalar_list(grouped_logs, 'original_gen_time', 'commit_attempt_elapsed', 'gen_time')
 grouped_logs = mean_scalar_list(grouped_logs, 'original_size', 'commit_attempt_sizes', 'size')
-grouped_logs = mean_scalar_list(grouped_logs, 'original_ciphertexts', 'commit_attempt_ciphertexts', 'number_of_ciphertexts')
-
 
 # add column with process times
 grouped_logs['size'] = pd.to_numeric(grouped_logs['size'], errors='coerce')
-grouped_logs['next_size'] = grouped_logs['size'].shift(-1)
-grouped_logs['next_update_gen_time'] = grouped_logs['gen_time'].shift(-1)
-grouped_logs['next_update_process_time'] = grouped_logs['process_times'].shift(-1)
+grouped_logs['next_size'] = grouped_logs['size'].shift(-1).fillna(0)
+grouped_logs['next_update_gen_time'] = grouped_logs['gen_time'].shift(-1).fillna(0)
+grouped_logs['next_update_process_time'] = grouped_logs['process_times'].shift(-1).fillna(0)
 
 grouped_logs['sizes_mean'] = grouped_logs.apply(calculate_mean_size, axis=1)
 grouped_logs['processing_elapsed_mean'] = grouped_logs.apply(calculate_processing_elapsed, axis=1)
@@ -359,10 +350,10 @@ grouped_logs = grouped_logs.drop(columns=['next_update_process_time'])
 grouped_logs = grouped_logs.drop(columns=['other_timestamps'])
 grouped_logs = grouped_logs.drop(columns=['welcome_timestamps'])
 grouped_logs = grouped_logs.drop(columns=['latency'])
-grouped_logs = grouped_logs.drop(columns=['original_gen_time', 'original_size', 'original_ciphertexts'])
-grouped_logs = grouped_logs.drop(columns=['commit_attempt_elapsed', 'commit_attempt_sizes', 'commit_attempt_ciphertexts'])
 
 # print and save`
 print(grouped_logs)
 grouped_logs.to_csv('grouped_logs.csv', index=False)
-raw_grouped_logs.to_csv('raw_grouped_logs.csv', index=False)
+
+if "raw_logs" in options:
+    raw_grouped_logs.to_csv('raw_grouped_logs.csv', index=False)

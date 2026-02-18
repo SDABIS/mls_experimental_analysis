@@ -7,10 +7,10 @@ cd client/rendezvous
 cargo build -r
 cp target/release/rendezvous .
 
-cd ../../../simulated_client
+cd ../../../emulated_client
 cargo build -r
 
-cp target/release/simulated_client ../environment/client
+cp target/release/emulated_client ../environment/client
 cp target/release/mls-ds ../environment/server
 
 echo "----- Creating Client Docker -----"
