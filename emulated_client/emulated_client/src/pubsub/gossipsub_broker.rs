@@ -69,6 +69,7 @@ impl Broker for GossipSubBroker {
 
         let topic = format!("cgka/group/{group_name}");
 
+        tracing::debug!("Sending welcome acknowledgement for group {}", group_name);
         let tx = self.tx.clone();
         thread::spawn(move || {
             tx.blocking_send(GossipSubQueueMessage::Message(topic, serialized_msg))

@@ -113,7 +113,7 @@ impl Orchestrator {
             NextAction::Listen
         };
 
-        tracing::info!(
+        tracing::debug!(
             "Action: {:?}. Winner={} (EXPECTED: {}), Me={}/{}{} - Rerolled={}",
             result,
             who_acts,
@@ -133,7 +133,7 @@ impl Orchestrator {
 
             
         if self.known_members.get(who_acts).cloned().unwrap_or("UNKNOWN".to_string()) == "" {
-            tracing::info!("WINNER NOT FOUND: {:?}", self.known_members);
+            tracing::error!("WINNER NOT FOUND: {:?}", self.known_members);
         }
 
         result
@@ -145,7 +145,7 @@ impl Orchestrator {
 
         let active_position = self.known_members.iter().position(|x| x == &self.name);
         if active_position.is_none() {
-            //tracing::info!("I am not active -- no removals needed");
+            tracing::debug!("I am not active -- no removals needed");
             return;
         }
 

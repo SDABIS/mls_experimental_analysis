@@ -6,6 +6,8 @@ use tokio::{io, select};
 use libp2p::{gossipsub, noise, rendezvous, swarm::NetworkBehaviour, swarm::SwarmEvent, tcp, yamux, Multiaddr, PeerId, Swarm, kad};
 use libp2p::kad::store::RecordStore;
 
+use tls_codec::Serialize;
+use ds_lib::{DSMessage, WelcomeAcknowledgement};
 use crate::user::{User};
 use std::hash::{Hash, Hasher};
 use futures::StreamExt;
@@ -242,13 +244,49 @@ impl<P: OpenMlsProvider + std::marker::Send + 'static> GossipSubUpdater<P> {
                 let topic_hash = gossipsub::IdentTopic::new(topic.clone());
                 swarm.behaviour_mut().gossipsub.subscribe(&topic_hash).unwrap();
 
-                self.subscriptions.get_mut(&user).unwrap().push(topic);
+                self.subscriptions.get_mut(&user).unwrap().push(topic.clone());
+
+                if topic.starts_with("cgka/group/") {
+                    tracing::debug!("Subscription acknowledged by {} for topic: {}", user, topic);
+
+                    let group_name = topic.trim_start_matches("cgka/group/").to_string();
+                    let ack = WelcomeAcknowledgement {
+                        sender: user.clone(),
+                        group: group_name.clone(),
+                    };
+
+                    let ds_message = DSMessage::WelcomeAcknowledgement(ack.clone());
+                    let serialized_msg = ds_message.tls_serialize_detached().unwrap();
+
+                    //tracing::info!("Sending Welcome to {}", user_name);
+                    let topic_str = format!("cgka/group/{group_name}");
+                    let topic = gossipsub::IdentTopic::new(topic.clone());
+                    match swarm.behaviour_mut().gossipsub.publish(topic.clone(), serialized_msg.clone()) {
+                        Err(e) => {
+                            tracing::error!("Error publishing Acknowledgement to topic {:?}: {:?}", topic_str, e);
+                        }
+                        _ => {}
+                    }
+                    self.deliver_to_users(topic_str, serialized_msg);
+                }
             }
             GossipSubQueueMessage::Unsubscribe(user,topic) => {
-                let topic_hash = gossipsub::IdentTopic::new(topic.clone());
-                swarm.behaviour_mut().gossipsub.unsubscribe(&topic_hash);
 
                 self.subscriptions.get_mut(&user).unwrap().retain(|sub| !sub.eq(&topic));
+
+                // if no user is subscribed to the topic, unsubscribe from broker
+                let mut subscribed = false;
+                for (_user, topics) in &self.subscriptions {
+                    if topics.contains(&topic) {
+                        subscribed = true;
+                        break;
+                    }
+                }
+                if !subscribed {
+                    tracing::info!("No users subscribed to topic {}, unsubscribing from broker", topic);
+                    let topic_hash = gossipsub::IdentTopic::new(topic.clone());
+                    swarm.behaviour_mut().gossipsub.unsubscribe(&topic_hash);
+                }
             }
 
             GossipSubQueueMessage::Publish(_name, key, value) => {
@@ -350,7 +388,7 @@ impl<P: OpenMlsProvider + std::marker::Send + 'static> GossipSubUpdater<P> {
 
                 for registration in registrations {
                     let peer_id = registration.record.peer_id();
-                    tracing::info!("Discovered peer {:?} with addresses {:?}", peer_id, registration.record.addresses());
+                    tracing::debug!("Discovered peer {:?} with addresses {:?}", peer_id, registration.record.addresses());
 
                     swarm.behaviour_mut().gossipsub.add_explicit_peer(&peer_id);
                     if let Directory::Kademlia = self.config.directory {
@@ -375,7 +413,8 @@ impl<P: OpenMlsProvider + std::marker::Send + 'static> GossipSubUpdater<P> {
             } => {
                 self.deliver_to_users(message.topic.to_string(), message.data);
             }
-            _ => {}
+            _ => {//tracing::info!("Other gossipsub event: {:?}", event);
+            }
         }
     }
 

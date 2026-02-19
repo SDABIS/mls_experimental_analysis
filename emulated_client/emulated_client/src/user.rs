@@ -1648,6 +1648,9 @@ impl<P: OpenMlsProvider> User<P> {
 
         mls_group.set_aad(group_aad.as_bytes().to_vec());
 
+
+        tracing::info!("JOINED GROUP {}. Epoch: {})", group_name, mls_group.epoch().as_u64());
+
         let group = Group {
             group_name: group_name.clone(),
             conversation: Conversation::default(),
@@ -1655,6 +1658,8 @@ impl<P: OpenMlsProvider> User<P> {
         };
 
         self.groups.borrow_mut().insert(group_name.clone(), group);
+
+
 
         Ok((
             group_name,
