@@ -54,19 +54,19 @@ proposals_per_commit = 8
 
 [http_server]
 # URL of the HTTP Server
-url = "http://X.X.X.X:8080"
+url = "http://172.31.0.2:8080"
 
 [mqtt]
 # URL of the MQTT broker (if cgka.ds = "mqtt")
-url = "tcp:///X.X.X.X:1883"
+url = "tcp://172.31.0.4:1883"
 
-[gossipsub]
+# [gossipsub]
 # Address in which gossipsub will listen (if cgka.ds = "gossipsub")
-address = "0.0.0.0"
+# address = "0.0.0.0"
 # Chosen Directory (if cgka.ds = "gossipsub"). Options: ["server", "kademlia"]
-directory = "server"
+# directory = "server"
 
 # Port of the Rendezvous server
-rendezvous_port = 62649
+# rendezvous_port = 62649
 # Peer ID of the Rendezvous server
-rendezvous_id = "12D3KooWDpJ7As7BWAwRMfu1VU2WCqNjvq387JEYKDBj4kx6nXTN"
+# rendezvous_id = "12D3KooWDpJ7As7BWAwRMfu1VU2WCqNjvq387JEYKDBj4kx6nXTN"
