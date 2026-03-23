@@ -8,7 +8,7 @@ This project is divided into 2 folders:
 
 ## Dependencies
 
-- Rust (nightly)
+- Rust (stable)
 - Docker
 
 ## Deployment
