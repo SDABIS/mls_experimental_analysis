@@ -1,4 +1,6 @@
-version: '3'
+networks:
+  mls_network:
+    external: true
 
 services:
   server:
@@ -7,8 +9,11 @@ services:
     image: mls_server
     ports: 
       - "8080:8080"
+    networks:
+      mls_network:
+        ipv4_address: 172.31.0.2
   broker:
-    image: eclipse-mosquitto:latest
+    image: eclipse-mosquitto:2.0.20
     ports: 
       - "1883:1883"
       - "9001:9001"
@@ -17,3 +22,6 @@ services:
       - ./broker/log:/mosquitto/log
     depends_on:
       - server
+    networks:
+      mls_network:
+        ipv4_address: 172.31.0.4
