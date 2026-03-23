@@ -1,4 +1,3 @@
-version: '3'
 networks:
   mls_network:
     external: true
@@ -29,3 +28,4 @@ services:
       - mls_network
   #  depends_on:
   #  - rendezvous
+  
