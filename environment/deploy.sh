@@ -32,8 +32,13 @@ done
 
 if $start_c || $start_s; then
     echo "Starting network"
-    docker network create mls_network --driver overlay --attachable --subnet 172.31.0.0/16 --ip-range 172.31.0.0/16 || \
-			echo "error starting network. maybe it was already started?"
+    docker network create mls_network \
+        --driver overlay \
+        --attachable \
+        --subnet XXX.XXX.0.0/16 \
+        --ip-range XXX.XXX.0.0/16 \
+    || \
+	    echo "error starting network. maybe it was already started?"
 fi
 
 if $start_s; then

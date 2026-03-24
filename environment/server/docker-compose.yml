@@ -24,4 +24,4 @@ services:
       - server
     networks:
       mls_network:
-        ipv4_address: 172.31.0.4
+        ipv4_address: XXX.XXX.ZZZ.ZZZ
