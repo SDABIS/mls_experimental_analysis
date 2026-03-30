@@ -1,11 +1,13 @@
 #!/bin/sh
 
-mkdir client/logs
+set -e
+
+mkdir --parents client/logs
 
 echo "----- Building project -----"
 cd client/rendezvous
-cargo build -r
-cp target/release/rendezvous .
+#cargo build -r
+#cp target/release/rendezvous .
 
 cd ../../../emulated_client
 cargo build -r

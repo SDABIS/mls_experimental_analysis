@@ -1,3 +1,5 @@
+set -e
+
 usage() {
     echo "Usage: $0 [-c N] [-s] [-h]"
     echo "  -c   Init N client dockers"
@@ -28,16 +30,26 @@ while getopts "c:sh" opt; do
     esac
 done
 
-if $start_c; then
-    docker network create mls_network --driver overlay --subnet 172.31.0.0/16 --ip-range 172.31.0.0/16 --scope swarm
-    echo "Starting ${client_replicas} clients"
-    REPLICAS=${client_replicas} docker stack deploy -c client/docker-compose.yml mls
+if $start_c || $start_s; then
+    echo "Starting network"
+    docker network create mls_network \
+        --driver overlay \
+        --attachable \
+        --subnet XXX.XXX.0.0/16 \
+        --ip-range XXX.XXX.0.0/16 \
+    || \
+	    echo "error starting network. maybe it was already started?"
 fi
 
 if $start_s; then
     echo "Starting server"
     cd ./server
-    docker compose up 
+    docker compose up
+fi
+
+if $start_c; then
+    echo "Starting ${client_replicas} clients"
+    REPLICAS=${client_replicas} docker stack deploy -c client/docker-compose.yml mls
 fi
 
 if ! $start_c && ! $start_s; then

@@ -1,6 +1,6 @@
 # MLS Emulation testbed
 
-Testbed for experimental analysis of the Messaging Layer Security (MLS) protocol, as specified in [our paper](). We refer to our publication for definitions of terms employed in this project.
+Testbed for experimental analysis of the Messaging Layer Security (MLS) protocol, as specified in [our paper](https://arxiv.org/abs/2502.18303v2). We refer to our publication for definitions of terms employed in this project.
 
 This project is divided into 2 folders:
 - [*/emulated_client*](./emulated_client): Contains the Rust project for the emulated MLS client and its interaction with the Delivery Services. 
@@ -8,13 +8,18 @@ This project is divided into 2 folders:
 
 ## Dependencies
 
-- Rust (nightly)
+- Rust (stable)
 - Docker
 
 ## Deployment
 
 - Configure the simulation parameters in */environment/client/Settings.toml*. Each parameter and its possible values are explained in the configuration file.
-    - IMPORTANT: Remember to set the URL of the HTTP Server and/or MQTT broker to the IP address of the machine where they are located, or to "localhost".
+    - IMPORTANT: Remember to set the URL of the HTTP Server and/or MQTT broker to the IP address of the machine where they are located, or to "localhost". The relevant files regarding this are in the environment directory:
+        - client/Settings.toml ("url" parameter)
+        - deploy.sh ("subnet" & "ip-range" parameters)
+        - server/broker/config/mosquitto.conf ("listener")
+        - server/docker-compose.yml (both ocurrences of "ipv4_address")
+
 - Build the Docker environment: 
 ```
 cd environment
