@@ -297,7 +297,7 @@ impl TryFrom<Credential> for BasicCredential {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TlsSize, TlsSerialize, TlsDeserialize, TlsDeserializeBytes)]
 /// A wrapper around a credential with a corresponding public key.
 pub struct CredentialWithKey {
     /// The [`Credential`].

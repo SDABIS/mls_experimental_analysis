@@ -6,7 +6,13 @@ replicas = 100
 behaviour = "orchestrated" 
 
 [orchestrator]
+
+# Inside a group, how many members are randomly selected to be able to issue updates
 max_active_committers = 10
+
+# Inside a group, how many members are randomly selected to process updates
+# IMPORTANT: If using removes, this number SHOULD be somewhat higher than "max_active_committers"
+# to ensure that the committers' list is full
 max_active_processers = 10
 auth_policy = "random"
 
@@ -42,8 +48,8 @@ message_length_max = 2000
 
 [paradigm]
 # Chance for each individual commit type. They should add to 1 and cannot go over it.
-invite_chance = 0.8
-remove_chance = 0
+invite_chance = 0.6
+remove_chance = 0.2
 update_chance = 0.2
 
 # Chosen paradigm. Options: ["commit", "propose"]

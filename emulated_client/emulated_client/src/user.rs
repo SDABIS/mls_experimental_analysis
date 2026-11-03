@@ -1798,6 +1798,25 @@ impl<P: OpenMlsProvider> User<P> {
             tree
         };
 
+        let removed_members = match &action_record.action {
+            CGKAAction::Commit(proposals, _) => proposals.iter().filter_map(|proposal| {
+                if let CGKAAction::Remove(user, _) = proposal {
+                    Some(user.clone())
+                } else {
+                    None
+                }
+            }).collect::<Vec<String>>(),
+            CGKAAction::Remove(user, _) => vec![user.clone()],
+            _ => vec![],
+        };
+
+        if !removed_members.is_empty() {
+            if let AgentType::Orchestrator(_, _, orchestrators) = &mut self.agent_type {
+                let orchestrator = orchestrators.get_mut(&group_name).unwrap();
+                orchestrator.remove_members(removed_members);
+            }
+        }
+
         let new_members = if let Some(stored_welcome) = stored_welcome {
             let StoredWelcome {welcome, recipients} = stored_welcome;
             let new_members: Vec<String> = recipients.clone();
@@ -1848,12 +1867,6 @@ impl<P: OpenMlsProvider> User<P> {
         let edited_record = match action_record.clone().action {
             CGKAAction::Propose(_) => {action_record},
             _ => {
-
-                let removed_members = match action_record.action {
-                    CGKAAction::Remove(ref user, _) => vec![user.clone()],
-                    _ => vec![]
-                };
-
                 let groups = self.groups.borrow();
                 let group = groups.get(&group_name).unwrap();
                 let mls_group = group.mls_group.borrow();
@@ -1875,7 +1888,6 @@ impl<P: OpenMlsProvider> User<P> {
                         let total_members = mls_group.members().count();
 
                         let orchestrator = orchestrators.get_mut(&group_name).unwrap();
-                        orchestrator.remove_members(removed_members);
                         let next_action = orchestrator.process_commit(
                             &transcript_hash,
                             total_members,
