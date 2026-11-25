@@ -188,3 +188,85 @@ impl Orchestrator {
 
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{NextAction, Orchestrator};
+    use crate::config::{AuthorizationPolicy, OrchestratedParameters};
+
+    fn roster(count: usize) -> Vec<String> {
+        (0..count).map(|i| format!("member-{i}")).collect()
+    }
+
+    fn settings(committers: usize, policy: AuthorizationPolicy) -> OrchestratedParameters {
+        OrchestratedParameters {
+            max_active_committers: committers,
+            max_active_processers: 20,
+            auth_policy: policy,
+        }
+    }
+
+    #[test]
+    fn skips_an_empty_tenth_slot() {
+        let members = roster(9);
+        let params = settings(10, AuthorizationPolicy::Random);
+        // This seed selected the empty tenth slot in the original scheduler.
+        let seed = [5; 32];
+        let winners = members.iter().filter(|name| {
+            let mut node = Orchestrator::new((*name).clone(), params.clone(), members.clone());
+            node.process_commit(&seed, 98, vec![]) == NextAction::Commit
+        });
+        assert_eq!(winners.count(), 1);
+    }
+
+    #[test]
+    fn a_single_joiner_can_commit() {
+        let members = roster(10);
+        let params = settings(10, AuthorizationPolicy::Last);
+        let joiner = String::from("joiner");
+
+        // A lone joiner should be able to win at least one of these draws.
+        assert!((0..=u8::MAX).any(|byte| {
+            let mut node = Orchestrator::new(joiner.clone(), params.clone(), members.clone());
+            node.process_commit(&[byte; 32], 11, vec![joiner.clone()]) == NextAction::Commit
+        }));
+    }
+
+    #[test]
+    fn one_existing_member_waits_for_both_joiners() {
+        let members = roster(10);
+        let params = settings(10, AuthorizationPolicy::Last);
+        let joiners = vec![String::from("joiner-a"), String::from("joiner-b")];
+
+        for byte in 0..=u8::MAX {
+            let mut waiters = 0;
+            // Everyone sees the same draw, including both new members.
+            for name in members.iter().chain(&joiners) {
+                let mut node = Orchestrator::new(name.clone(), params.clone(), members.clone());
+                let action = node.process_commit(&[byte; 32], 12, joiners.clone());
+                assert_ne!(action, NextAction::Commit);
+                if node.pending_acks > 0 {
+                    // Only an existing member may win, and it must wait for both ACKs.
+                    assert!(members.contains(name));
+                    assert_eq!(node.pending_acks, 2);
+                    assert_eq!(node.process_ack(), NextAction::Listen);
+                    assert_eq!(node.process_ack(), NextAction::Commit);
+                    waiters += 1;
+                }
+            }
+            assert_eq!(waiters, 1);
+        }
+    }
+
+    #[test]
+    fn listens_when_no_committer_is_eligible() {
+        // Only slot zero can commit. The processor occupies slot one.
+        let members = vec![String::new(), String::from("processor")];
+        let mut node = Orchestrator::new(
+            String::from("processor"),
+            settings(1, AuthorizationPolicy::Random),
+            members,
+        );
+        assert_eq!(node.process_commit(&[0; 32], 2, vec![]), NextAction::Listen);
+    }
+}
