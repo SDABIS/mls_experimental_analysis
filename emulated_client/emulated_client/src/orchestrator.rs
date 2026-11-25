@@ -87,16 +87,23 @@ impl Orchestrator {
 
         let active_position = active_position.unwrap();
 
-        let mut who_acts = rng.gen_range(0..min(self.parameters.max_active_committers, total_members));
+        let eligible_committers: Vec<usize> = self
+            .known_members
+            .iter()
+            .take(min(self.parameters.max_active_committers, total_members))
+            .enumerate()
+            .filter(|(_, member)| {
+                !member.is_empty() && (new_members.len() <= 1 || !new_members.contains(member))
+            })
+            .map(|(position, _)| position)
+            .collect();
 
-        let mut rerolled = false;
-        // If there were multiple new members, some of them may not receive ACKs due to synchronization issues
-        // Preventively, do not allow next committer to be a new member if there were multiple new members
-        while new_members.len() > 1 && new_members.contains(&self.known_members[who_acts]) {
-            // Try again
-            who_acts = rng.gen_range(0..min(self.parameters.max_active_committers, total_members));
-            rerolled = true;
+        if eligible_committers.is_empty() {
+            tracing::error!("No eligible committer: {:?}", self.known_members);
+            return NextAction::Listen;
         }
+
+        let who_acts = eligible_committers[rng.gen_range(0..eligible_committers.len())];
 
         let result = if active_position == who_acts {
             // Expect as many acks as "falses" in new_members -- to omit myself
@@ -114,14 +121,13 @@ impl Orchestrator {
         };
 
         tracing::debug!(
-            "Action: {:?}. Winner={} (EXPECTED: {}), Me={}/{}{} - Rerolled={}",
+            "Action: {:?}. Winner={} (EXPECTED: {}), Me={}/{}{}",
             result,
             who_acts,
             self.known_members.get(who_acts).cloned().unwrap_or("UNKNOWN".to_string()),
             active_position,
             min(self.parameters.max_active_committers, total_members),
             if self.pending_acks > 0 { ", (PENDING)" } else { "" },
-            rerolled
         );
 
                 // If there is a "" followed by a non-"" member, error in the state
@@ -132,10 +138,6 @@ impl Orchestrator {
         }
 
             
-        if self.known_members.get(who_acts).cloned().unwrap_or("UNKNOWN".to_string()) == "" {
-            tracing::error!("WINNER NOT FOUND: {:?}", self.known_members);
-        }
-
         result
     }
 
