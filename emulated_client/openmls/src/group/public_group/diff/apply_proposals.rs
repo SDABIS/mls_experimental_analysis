@@ -102,7 +102,7 @@ impl PublicGroupDiff<'_> {
                     _ => (),
                 };
                 // Blank the direct path of the removed member
-                self.diff.blank_leaf(remove_proposal.removed());
+                self.diff.blank_leaf(remove_proposal.removed())?;
             }
         }
 

@@ -161,36 +161,12 @@ impl TreeSyncDiff<'_> {
             .collect()
     }
 
-    /// Trims the tree by shrinking it until the last full leaf is in the
-    /// right part of the tree.
-    fn trim_tree(&mut self) {
-        // Nothing to trim if there's only one leaf left.
-        if self.leaf_count() == MIN_TREE_SIZE {
-            return;
-        }
-
-        let rightmost_full_leaf = self.rightmost_full_leaf();
-
-        // We shrink the tree until the last full leaf is the right part of the
-        // tree
-        while self.diff.size().leaf_is_left(rightmost_full_leaf) {
-            let res = self.diff.shrink_tree();
-            // We should never run into an error here, since `leaf_is_left`
-            // returns false when the tree only has one leaf.
-            debug_assert!(res.is_ok());
-        }
-    }
-
-    /// Returns the index of the last full leaf in the tree.
-    fn rightmost_full_leaf(&self) -> LeafNodeIndex {
-        let index = LeafNodeIndex::new((self.num_members + self.blanked_leaves.len() - 1) as u32);
-        /*for (leaf_index, leaf) in self.diff.leaves_rev() {
-            if leaf.node().as_ref().is_some() {
-                println!("Found full leaf at index {:?}. Estimated: {:?}. Num_Members: {}, Blanked leaves: {}", leaf_index, index, self.num_members, self.blanked_leaves.len());
-                return leaf_index;
-            }
-        }*/
-        index
+    /// One past the last occupied leaf in the current diff, or zero for an empty tree.
+    fn occupied_leaf_span(&self) -> u32 {
+        (0..self.leaf_count())
+            .rev()
+            .find(|&i| self.diff.leaf(LeafNodeIndex::new(i)).node().is_some())
+            .map_or(0, |i| i + 1)
     }
 
     /// Returns the number of leaves in the tree that would result from merging
@@ -288,18 +264,25 @@ impl TreeSyncDiff<'_> {
     /// leaves are removed until the right-most leaf in the tree, as well as its
     /// parent are non-blank.
     ///
-    /// Returns an error if the target leaf is outside of the tree.
-    pub(crate) fn blank_leaf(&mut self, leaf_index: LeafNodeIndex) {
+    /// Returns a library error if the tree cannot shrink to the calculated width.
+    pub(crate) fn blank_leaf(&mut self, leaf_index: LeafNodeIndex) -> Result<(), LibraryError> {
         self.diff
             .replace_leaf(leaf_index, TreeSyncLeafNode::blank());
         // This also erases any cached tree hash in the direct path.
         self.diff
             .set_direct_path_to_node(leaf_index, &TreeSyncParentNode::blank());
-        self.trim_tree();
+        let span = self.occupied_leaf_span();
+        let width = span.max(1).next_power_of_two();
+        while self.leaf_count() > width {
+            self.diff
+                .shrink_tree()
+                .map_err(|_| LibraryError::custom("Cannot shrink tree to the calculated width"))?;
+        }
 
-        // We add the blanked leaf to the list of blanked leaves in the diff
         self.blanked_leaves.push(leaf_index);
+        self.blanked_leaves.retain(|index| index.u32() < span);
         self.num_members -= 1;
+        Ok(())
     }
 
     /// Derive a new direct path for the leaf with the given index.
@@ -548,7 +531,7 @@ impl TreeSyncDiff<'_> {
         &self,
         node_index: TreeNodeIndex,
         excluded_indices: &HashSet<&LeafNodeIndex>,
-        rightmost_full_leaf: &LeafNodeIndex,
+        occupied_leaf_span: u32,
     ) -> Vec<(TreeNodeIndex, NodeReference)> {
         match node_index {
             TreeNodeIndex::Leaf(leaf_index) => {
@@ -595,7 +578,7 @@ impl TreeSyncDiff<'_> {
                         let leftmost = self.diff.leftmost_child(parent_index);
 
                         if let TreeNodeIndex::Leaf(leaf_index) = leftmost {
-                            if leaf_index.u32() > rightmost_full_leaf.u32() {
+                            if leaf_index.u32() >= occupied_leaf_span {
                                 return vec![];
                             }
                         }
@@ -606,8 +589,8 @@ impl TreeSyncDiff<'_> {
                         let left_child = self.diff.left_child(parent_index);
                         let right_child = self.diff.right_child(parent_index);
 
-                        resolution.append(&mut self.resolution(left_child, excluded_indices, rightmost_full_leaf));
-                        resolution.append(&mut self.resolution(right_child, excluded_indices, rightmost_full_leaf));
+                        resolution.append(&mut self.resolution(left_child, excluded_indices, occupied_leaf_span));
+                        resolution.append(&mut self.resolution(right_child, excluded_indices, occupied_leaf_span));
                         resolution
                     }
                 }
@@ -632,14 +615,14 @@ impl TreeSyncDiff<'_> {
             return vec![];
         }
 
-        let rightmost_full_leaf = self.rightmost_full_leaf();
+        let occupied_leaf_span = self.occupied_leaf_span();
 
         // Get the copath of the given leaf index and compute the resolution of
         // each node.
         self.diff
             .copath(leaf_index)
             .into_iter()
-            .map(|node_index| self.resolution(node_index, &HashSet::new(), &rightmost_full_leaf))
+            .map(|node_index| self.resolution(node_index, &HashSet::new(), occupied_leaf_span))
             .collect()
     }
 
@@ -655,16 +638,14 @@ impl TreeSyncDiff<'_> {
             return vec![];
         }
 
+        let occupied_leaf_span = self.occupied_leaf_span();
         let mut copath_resolutions = Vec::new();
 
         for node_index in self.diff.copath(leaf_index) {
-            let rightmost_full_leaf = {
-                self.rightmost_full_leaf()
-            };
 
             let resolution = {
                 track_cpu!("resolution");
-                self.resolution(node_index, &HashSet::new(), &rightmost_full_leaf)
+                self.resolution(node_index, &HashSet::new(), occupied_leaf_span)
             };
 
             if !resolution.is_empty() {
@@ -713,6 +694,7 @@ impl TreeSyncDiff<'_> {
         //
         // The parent hash for a given node is valid, when exactly one descendant
         // carries the parent hash it its parent hash field.
+        let occupied_leaf_span = self.occupied_leaf_span();
         for (parent_index, tree_sync_parent_node) in self.diff.parents() {
             if let Some(parent_node) = tree_sync_parent_node.node() {
                 // We consider both children of the parent node. One of them
@@ -753,11 +735,10 @@ impl TreeSyncDiff<'_> {
                 let parent_hash_right =
                     parent_node.compute_parent_hash(crypto, ciphersuite, &oth_left)?;
 
-                    let rightmost_full_leaf = self.rightmost_full_leaf();
                 // Compute the resolution for both children.
-                let left_resolution = self.resolution(left_child, &exclusion_list, &rightmost_full_leaf);
+                let left_resolution = self.resolution(left_child, &exclusion_list, occupied_leaf_span);
 
-                let right_resolution = self.resolution(right_child, &exclusion_list, &rightmost_full_leaf);
+                let right_resolution = self.resolution(right_child, &exclusion_list, occupied_leaf_span);
 
                 // Find parent hash in the left resolution.
                 let left_descendant = left_resolution.iter().find(|(_, node)| match node {
@@ -1004,11 +985,11 @@ impl TreeSyncDiff<'_> {
             .diff
             .subtree_root_copath_node(sender_leaf_index, leaf_index);
 
-            let rightmost_full_leaf = self.rightmost_full_leaf();
+        let occupied_leaf_span = self.occupied_leaf_span();
         
         let sender_copath_resolution: Vec<EncryptionKey> =
                 self
-                .resolution(subtree_root_copath_node_id, excluded_indices, &rightmost_full_leaf)
+                .resolution(subtree_root_copath_node_id, excluded_indices, occupied_leaf_span)
                 .into_iter()
                 .map(|(_, node_ref)| match node_ref {
                     NodeReference::Leaf(leaf) => leaf.encryption_key().clone(),
@@ -1047,8 +1028,7 @@ impl TreeSyncDiff<'_> {
     pub(crate) fn export_ratchet_tree(&self) -> RatchetTree {
         let mut nodes = Vec::new();
 
-        // Determine the index of the rightmost full leaf.
-        let max_length = self.rightmost_full_leaf();
+        let occupied_leaf_span = self.occupied_leaf_span() as usize;
 
         // We take all the leaves including the rightmost full leaf, blank
         // leaves beyond that are trimmed.
@@ -1056,7 +1036,7 @@ impl TreeSyncDiff<'_> {
             .diff
             .leaves()
             .map(|(_, leaf)| leaf)
-            .take(max_length.usize() + 1);
+            .take(occupied_leaf_span);
 
         // Get the first leaf.
         if let Some(leaf) = leaves.next() {
@@ -1076,7 +1056,7 @@ impl TreeSyncDiff<'_> {
             // Drop the index
             .map(|(_, parent)| parent)
             // Take the parents up to the max length
-            .take(max_length.usize())
+            .take(occupied_leaf_span.saturating_sub(1))
             // Pad the parents with blank nodes if needed
             .chain(
                 (self.diff.parents().count()..self.diff.leaves().count() - 1)
