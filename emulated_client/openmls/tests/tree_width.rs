@@ -85,3 +85,9 @@ fn welcome_reuses_an_interior_gap_with_the_right_edge_occupied() {
     // Slot 3 remains occupied, so the next join should fill the gap at slot 2.
     check_join_after_removals(4, &[2], 2);
 }
+
+#[test]
+fn welcome_reuses_slot_one_after_removing_from_a_four_member_tree() {
+    // This gap exercises leftmost() on a subtree that begins at leaf zero.
+    check_join_after_removals(4, &[1], 1);
+}
