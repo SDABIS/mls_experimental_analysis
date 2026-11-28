@@ -309,7 +309,7 @@ pub(crate) fn leftmost(index: ParentNodeIndex) -> TreeNodeIndex {
     let x = index.to_tree_index();
     let k = level(x);
     debug_assert!(k > 0);
-    let leftmost = x - (0x01 << k) + 1;
+    let leftmost = x - ((0x01 << k) - 1);
     TreeNodeIndex::new(leftmost)
 }
 
