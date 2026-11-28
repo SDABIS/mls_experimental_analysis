@@ -172,7 +172,7 @@ impl GroupInfoAndTree {
 
 impl tls_codec::Size for WelcomeAcknowledgement {
     fn tls_serialized_len(&self) -> usize {
-        TlsByteVecU8::from_slice(self.group.as_bytes()).tls_serialized_len() + TlsByteVecU8::from_slice(self.group.as_bytes()).tls_serialized_len()
+        TlsByteVecU8::from_slice(self.sender.as_bytes()).tls_serialized_len() + TlsByteVecU8::from_slice(self.group.as_bytes()).tls_serialized_len()
     }
 }
 
