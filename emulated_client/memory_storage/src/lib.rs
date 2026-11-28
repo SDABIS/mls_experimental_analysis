@@ -100,7 +100,7 @@ impl MemoryStorage {
         log::debug!("  write key: {}", hex::encode(&storage_key));
         log::trace!("{}", std::backtrace::Backtrace::capture());
 
-        values.insert(storage_key, value.to_vec());
+        values.insert(storage_key, value);
         Ok(())
     }
 
